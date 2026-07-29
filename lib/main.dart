@@ -10,7 +10,8 @@ import 'local_store.dart';
 import 'pdf_text_extractor_service.dart';
 import 'study_summary_generator.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   // Captura qualquer exceção do framework ou da plataforma (ex.: uma falha
   // assíncrona ao carregar o PDFium/WASM) que não seria pega por um
   // try/catch comum dentro de um único widget, registrando-a no console em
@@ -25,7 +26,29 @@ void main() {
     debugPrint('PlatformDispatcher stack: $stack');
     return true;
   };
+
+  // Antes de desenhar a primeira tela, confere se já existe uma sessão
+  // ativa — trocar de app, bloquear o celular ou recarregar a página não
+  // deve derrubar o login. Se houver, o app abre direto na Home em vez do
+  // onboarding/login.
+  await restoreActiveSession();
+
   runApp(const EstudoEmFocoApp());
+}
+
+/// Restaura a sessão ativa (ver `LocalStore.restoreSession`/
+/// `session_storage.dart`) em [currentAccount]/[currentProgress], se
+/// houver uma válida. Chamado uma vez em `main()`, antes de `runApp`;
+/// exposto separadamente para poder ser exercitado nos testes, que não
+/// chamam `main()`.
+Future<void> restoreActiveSession() async {
+  final restoredAccount = await LocalStore.restoreSession();
+  if (restoredAccount != null) {
+    currentAccount.value = restoredAccount;
+    currentProgress.value = await LocalStore.loadProgress(
+      restoredAccount.email,
+    );
+  }
 }
 
 final BoxDecoration kCardDecoration = BoxDecoration(
@@ -291,7 +314,14 @@ class EstudoEmFocoApp extends StatelessWidget {
             : _MobileWidthFrame(child: navigatorChild!),
         child: child,
       ),
-      home: const OnboardingScreen(),
+      // Lido uma única vez, no primeiro build: se `main()` já restaurou uma
+      // sessão ativa (ver acima), abre direto na Home; senão, mostra o
+      // onboarding normalmente. Mudanças de sessão DEPOIS desse primeiro
+      // build (login, logout) são tratadas pelas próprias telas via
+      // `enterAppAfterAuth`/`redirectToShellIfLoggedIn`, não aqui.
+      home: currentAccount.value != null
+          ? const MainShell()
+          : const OnboardingScreen(),
     );
   }
 }

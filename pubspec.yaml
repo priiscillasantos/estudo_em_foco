@@ -49,6 +49,7 @@ dependencies:
   # Real PDF rendering (Web + Android) for MaterialReaderPage: page
   # rendering, zoom, page navigation, thumbnails and text search.
   pdfrx: ^2.4.7
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:

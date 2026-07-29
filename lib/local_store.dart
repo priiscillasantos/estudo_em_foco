@@ -16,6 +16,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'session_storage.dart' as session_storage;
+
 /// Conta de estudante cadastrada localmente.
 class UserAccount {
   final String id;
@@ -322,7 +324,6 @@ class LocalStore {
   LocalStore._();
 
   static const _accountsKey = 'accounts';
-  static const _sessionKey = 'session_email';
   // Guarda só o e-mail (nunca a senha) do último login/cadastro bem-sucedido,
   // para pré-preencher o campo de e-mail na tela de Login (ver
   // `_LoginScreenState`). Deliberadamente uma chave SEPARADA de
@@ -471,23 +472,31 @@ class LocalStore {
     }
   }
 
+  // A sessão ATIVA (diferente de contas/materiais/progresso) fica em
+  // `sessionStorage`, não em `shared_preferences`/`localStorage`: assim ela
+  // sobrevive a trocar de app, bloquear o celular ou recarregar a página
+  // (mesma aba = mesma sessão do navegador), mas nunca vira um login
+  // automático permanente — encerra sozinha quando a aba/navegador é
+  // fechado de verdade ou os dados do navegador são limpos. Ver
+  // `session_storage.dart`.
   static Future<void> _setSession(String? email) async {
-    try {
-      final prefs = await _prefs();
-      if (email == null) {
-        await prefs.remove(_sessionKey);
-      } else {
-        await prefs.setString(_sessionKey, email);
-      }
-    } catch (e) {
-      debugPrint(
-        'LocalStore: não foi possível salvar a sessão no armazenamento '
-        'local (mantida em memória apenas para esta sessão): $e',
-      );
-    }
+    session_storage.writeSessionEmail(email);
   }
 
   static Future<void> logout() => _setSession(null);
+
+  /// Devolve a conta da sessão ativa, se houver uma válida: lê o e-mail
+  /// salvo em `sessionStorage` (ver acima) e confirma que ainda existe uma
+  /// conta cadastrada com esse e-mail — evita reabrir uma sessão "fantasma"
+  /// se os dados tiverem sido limpos/editados desde então. Chamado ao
+  /// iniciar o app para decidir entre abrir direto na Home ou mostrar
+  /// onboarding/login.
+  static Future<UserAccount?> restoreSession() async {
+    final email = session_storage.readSessionEmail();
+    if (email == null) return null;
+    final accounts = await _loadAccounts();
+    return accounts.where((a) => a.email == email).firstOrNull;
+  }
 
   static Future<List<StudyMaterial>> loadMaterials(String email) async {
     try {

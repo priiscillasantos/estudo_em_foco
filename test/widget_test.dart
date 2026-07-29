@@ -38,6 +38,10 @@ void main() {
     currentAccount.value = null;
     currentProgress.value = const UserProgress();
     mainShellTabIndex.value = 0;
+    // A sessão ativa vive fora do SharedPreferences (ver
+    // `session_storage.dart`/AJUSTE de persistência de sessão), então
+    // `setMockInitialValues` sozinho não a limpa entre testes.
+    await LocalStore.logout();
   });
 
   testWidgets('onboarding shows welcome content', (WidgetTester tester) async {
@@ -695,6 +699,114 @@ void main() {
         expect(find.textContaining('Olá, Aluno Voltar!'), findsOneWidget);
 
         await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  });
+
+  group('persistência da sessão ativa entre reaberturas do app (AJUSTE 3 '
+      '- sessão)', () {
+    testWidgets(
+      'sessão ativa sobrevive a "reabrir o app" (trocar de app/recarregar '
+      'a página): abre direto na Home, sem pedir login de novo',
+      (WidgetTester tester) async {
+        await LocalStore.signUp(
+          name: 'Aluno Sessão',
+          email: 'aluno.sessao@estudo.com',
+          password: 'senha123',
+        );
+
+        // Simula um "reabrir o app" (nova aba/recarregar a página): os
+        // ValueNotifiers globais voltam ao estado inicial, exatamente como
+        // aconteceria com uma recarga de verdade — só a sessão em
+        // `sessionStorage` (aqui, o stub em memória) sobrevive.
+        currentAccount.value = null;
+        currentProgress.value = const UserProgress();
+
+        await restoreActiveSession();
+        await tester.pumpWidget(const EstudoEmFocoApp());
+        await tester.pumpAndSettle();
+
+        expect(find.byType(MainShell), findsOneWidget);
+        expect(find.byType(OnboardingScreen), findsNothing);
+        expect(find.byType(LoginScreen), findsNothing);
+        expect(find.textContaining('Olá, Aluno Sessão!'), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets(
+      'depois de Sair, reabrir o app NÃO restaura a sessão — mostra '
+      'onboarding com o último e-mail lembrado e a senha vazia',
+      (WidgetTester tester) async {
+        await LocalStore.signUp(
+          name: 'Aluno Sessão',
+          email: 'aluno.sessao@estudo.com',
+          password: 'senha123',
+        );
+        await LocalStore.logout();
+
+        currentAccount.value = null;
+        currentProgress.value = const UserProgress();
+
+        await restoreActiveSession();
+        await tester.pumpWidget(const EstudoEmFocoApp());
+        await tester.pumpAndSettle();
+
+        expect(find.byType(MainShell), findsNothing);
+        expect(find.byType(OnboardingScreen), findsOneWidget);
+
+        await tester.ensureVisible(find.text('Já tenho uma conta'));
+        await tester.tap(find.text('Já tenho uma conta'));
+        await tester.pumpAndSettle();
+
+        final loginFields = find.byType(TextFormField);
+        expect(
+          tester.widget<TextFormField>(loginFields.at(0)).controller?.text,
+          'aluno.sessao@estudo.com',
+        );
+        expect(
+          tester.widget<TextFormField>(loginFields.at(1)).controller?.text,
+          isEmpty,
+        );
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    test(
+      'sessão residual apontando para uma conta que não existe mais '
+      '(dados limpos) não é restaurada',
+      () async {
+        await LocalStore.signUp(
+          name: 'Aluno Removido',
+          email: 'removido@estudo.com',
+          password: '123456',
+        );
+
+        await LocalStore.clearAllTestData();
+
+        final restored = await LocalStore.restoreSession();
+        expect(restored, isNull);
+      },
+    );
+
+    test(
+      'LocalStore.restoreSession() devolve a conta certa depois de '
+      'signUp/login e null depois de logout',
+      () async {
+        expect(await LocalStore.restoreSession(), isNull);
+
+        final account = await LocalStore.signUp(
+          name: 'Aluno Unit',
+          email: 'aluno.unit@estudo.com',
+          password: 'senha123',
+        );
+        final restored = await LocalStore.restoreSession();
+        expect(restored?.email, account.email);
+
+        await LocalStore.logout();
+        expect(await LocalStore.restoreSession(), isNull);
       },
     );
   });
