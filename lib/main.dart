@@ -1032,17 +1032,23 @@ class _MainShellState extends State<MainShell> {
       return const LoginScreen();
     }
 
-    // Com sessão ativa, o botão voltar (navegador/Android) nunca deve
-    // fechar o app direto: se o usuário está numa aba diferente de
-    // "Início", voltar primeiro leva pra Início (a "tela anterior útil"
-    // dentro do shell, já que as abas usam IndexedStack, não o
-    // Navigator); só deixa o voltar seguir seu curso normal quando já
-    // está em Início.
+    // Com sessão ativa, o shell autenticado SEMPRE intercepta o voltar
+    // (canPop nunca é true aqui) — nunca deixa o evento "vazar" pro
+    // navegador/Android. Isso é proposital: se o voltar em Início fosse
+    // liberado (canPop: true), o Flutter Web bubla o evento pro histórico
+    // real do navegador, que ainda guarda as entradas de Onboarding/Login
+    // de ANTES do login (o pushAndRemoveUntil só troca a pilha do
+    // Navigator, não apaga essas entradas) — é assim que o botão voltar
+    // do celular conseguia "reaparecer" no login mesmo com sessão ativa,
+    // sobretudo depois de várias telas empilhadas (upload de PDF, quiz,
+    // feedback). Se o usuário está numa aba diferente de "Início", voltar
+    // primeiro leva pra Início; se já está em Início, o voltar não faz
+    // nada — nunca sai do app de forma brusca nem cai no login/onboarding.
     return PopScope(
-      canPop: _selectedIndex == 0,
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
-        _selectTab(0);
+        if (_selectedIndex != 0) _selectTab(0);
       },
       child: Scaffold(
         body: IndexedStack(
@@ -4949,8 +4955,23 @@ class _QuizScreenState extends State<QuizScreen> {
         ? 'Bom, revise alguns pontos.'
         : 'Releia o material e tente novamente.';
     _persistQuizProgress();
-    Navigator.pushReplacement(
-      context,
+    // Deixa o shell já pronto em Início por baixo do Feedback: se o
+    // usuário voltar (seta do navegador/Android) a partir do Feedback, cai
+    // direto em Início, não na aba onde o quiz foi aberto.
+    mainShellTabIndex.value = 0;
+    // Normaliza a pilha ANTES de ir pro Feedback: quando o Quiz é aberto
+    // pela aba inferior (não empilhado — QuizScreen mora dentro do
+    // IndexedStack do shell, não é uma rota própria), a rota atual do
+    // Navigator é o próprio MainShell. Um `pushReplacement` direto nesse
+    // caso substituiria o MainShell inteiro pelo Feedback — apagando o
+    // PopScope que protege o botão voltar contra cair no histórico de
+    // login/onboarding de antes da sessão. `popUntil(isFirst)` garante que
+    // o MainShell nunca é substituído, só o que estiver empilhado ACIMA
+    // dele (ex.: quando o Quiz foi aberto a partir de um card de
+    // material); depois disso, empilha o Feedback normalmente por cima.
+    final navigator = Navigator.of(context);
+    navigator.popUntil((route) => route.isFirst);
+    navigator.push(
       MaterialPageRoute(
         builder: (_) => PerformanceScreen(
           acertos: _score,

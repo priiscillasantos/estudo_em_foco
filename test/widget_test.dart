@@ -811,6 +811,151 @@ void main() {
     );
   });
 
+  group('navegação do voltar no fluxo de quiz (upload + quiz + feedback)', () {
+    const transdutores =
+        'Esta aula aborda os sistemas de medição, os transdutores, sensores '
+        'e atuadores. Os sensores convertem grandezas físicas, como '
+        'temperatura, pressão e movimento, em sinais elétricos. Os '
+        'atuadores transformam sinais elétricos em outras grandezas '
+        'físicas, como movimento.';
+
+    Future<void> answerCurrentQuestionAndAdvance(WidgetTester tester) async {
+      // Restrito ao próprio QuizScreen (o IndexedStack do shell mantém as
+      // outras abas montadas, só escondidas) e pulando os 2 primeiros
+      // InkWells do cabeçalho (seta de voltar e favoritar, sempre
+      // presentes ANTES das alternativas na árvore) — tocar a seta de
+      // voltar aqui testaria o botão interno do app, não uma alternativa.
+      final firstOption = find
+          .descendant(
+            of: find.byType(QuizScreen),
+            matching: find.byType(InkWell),
+          )
+          .at(2);
+      await tester.ensureVisible(firstOption);
+      await tester.tap(firstOption);
+      await tester.pumpAndSettle();
+      final resultButton = find.text('Ver resultado');
+      if (tester.any(resultButton)) {
+        await tester.ensureVisible(resultButton);
+        await tester.tap(resultButton);
+      } else {
+        final nextButton = find.text('Próxima pergunta');
+        await tester.ensureVisible(nextButton);
+        await tester.tap(nextButton);
+      }
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'terminar um quiz (aberto a partir de um material com resumo, como '
+      'depois de um upload de PDF) chega no Feedback com o shell já em '
+      'Início por baixo; voltar uma vez sai do Feedback pra Início, e '
+      'voltar várias vezes depois disso nunca cai em login/onboarding',
+      (WidgetTester tester) async {
+        // Viewport bem mais alto que o padrão de teste (800x600): a tela
+        // do quiz tem cabeçalho + pergunta + 4 alternativas + dica + botão,
+        // que não cabe em 600px de altura — sem isso, o botão "Próxima
+        // pergunta"/"Ver resultado" fica fora da área testável mesmo com
+        // ensureVisible (por causa das camadas de Ink/Semantics em volta).
+        tester.view.physicalSize = const Size(800, 2000);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        // Cria a conta e já salva o material (simulando o resultado de um
+        // upload de PDF já processado) ANTES do MainShell existir: a aba
+        // Quiz (QuizScreen dentro do IndexedStack do shell) resolve o
+        // material mais recente uma única vez, no seu próprio initState —
+        // se o shell já tivesse montado antes de o material existir, essa
+        // resolução ficaria presa num quiz vazio.
+        final account = await LocalStore.signUp(
+          name: 'Aluno Quiz',
+          email: 'aluno.quiz@estudo.com',
+          password: 'senha123',
+        );
+        await LocalStore.saveMaterials(account.email, [
+          StudyMaterial(
+            id: 'material-quiz-1',
+            fileName: 'aula-transdutores.pdf',
+            userSummary: transdutores,
+            // "Já processado" (como depois que o app libera o quiz de
+            // verdade): extractionStatus/summaryStatus pending renderiam
+            // um CircularProgressIndicator indeterminado em Estudos (que
+            // fica sempre montado no IndexedStack do shell) e travariam
+            // qualquer pumpAndSettle deste teste para sempre.
+            extractedText: transdutores,
+            extractionStatus: PdfExtractionStatus.success,
+            generatedSummary: transdutores,
+            summaryStatus: SummaryStatus.success,
+          ),
+        ]);
+        currentAccount.value = account;
+        currentProgress.value = await LocalStore.loadProgress(account.email);
+        mainShellTabIndex.value = 0;
+
+        await tester.pumpWidget(const MaterialApp(home: MainShell()));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(MainShell), findsOneWidget);
+
+        // Abre a aba Quiz pelo shell (não empilha nada além do próprio
+        // shell até aqui) e responde as 3 perguntas até o Feedback. Usa o
+        // destino da NavigationBar especificamente, já que "Quiz" também
+        // aparece no atalho da Home.
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NavigationBar),
+            matching: find.text('Quiz'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        for (var i = 0; i < 3; i++) {
+          await answerCurrentQuestionAndAdvance(tester);
+        }
+
+        expect(find.byType(PerformanceScreen), findsOneWidget);
+        expect(
+          mainShellTabIndex.value,
+          0,
+          reason:
+              'o shell por baixo do Feedback já deve estar em Início, para '
+              'que voltar não caia na aba onde o quiz foi aberto',
+        );
+
+        // Voltar uma vez a partir do Feedback: sai do Feedback (pop normal
+        // de uma rota empilhada sobre o shell) e cai em Início, nunca em
+        // login/onboarding.
+        final performanceContext = tester.element(
+          find.byType(PerformanceScreen),
+        );
+        await Navigator.of(performanceContext).maybePop();
+        await tester.pumpAndSettle();
+
+        expect(find.byType(PerformanceScreen), findsNothing);
+        expect(find.byType(MainShell), findsOneWidget);
+        expect(find.byType(OnboardingScreen), findsNothing);
+        expect(find.byType(LoginScreen), findsNothing);
+        expect(find.textContaining('Olá, Aluno Quiz!'), findsOneWidget);
+
+        // Voltar várias vezes a partir daqui (já em Início, sem mais
+        // rotas empilhadas): o shell autenticado intercepta TODO pop
+        // (PopScope com canPop sempre false), então isso nunca deve
+        // vazar pro histórico do navegador de antes do login.
+        for (var i = 0; i < 4; i++) {
+          final shellContext = tester.element(find.byType(MainShell));
+          await Navigator.of(shellContext).maybePop();
+          await tester.pumpAndSettle();
+        }
+
+        expect(find.byType(MainShell), findsOneWidget);
+        expect(find.byType(OnboardingScreen), findsNothing);
+        expect(find.byType(LoginScreen), findsNothing);
+        expect(find.textContaining('Olá, Aluno Quiz!'), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  });
+
   group('zoom button enablement (Leitura do material)', () {
     test('"-" disabled while the viewer is not ready yet', () {
       expect(
