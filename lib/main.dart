@@ -363,14 +363,12 @@ class OnboardingScreen extends StatelessWidget {
             // Painel inferior com gradiente: o subtítulo "Organize seus
             // estudos..." já vem DESENHADO na própria imagem de fundo, numa
             // posição proporcional à altura da tela — em celulares mais
-            // altos/estreitos que a prévia usada no design, os indicadores/
-            // texto abaixo (que ficam mais altos por ficarem ancorados só
-            // no fundo) acabavam caindo bem em cima desse texto da imagem,
-            // parecendo um erro visual. Um gradiente que sempre acompanha o
-            // tamanho real do conteúdo (em vez de uma altura fixa "no
-            // olho") garante que indicadores/texto/botões sempre pousem
-            // sobre um fundo sólido e legível, não importa a altura do
-            // aparelho.
+            // altos/estreitos que a prévia usada no design, o texto/botões
+            // abaixo (ancorados só no fundo) podiam cair perto demais desse
+            // texto da imagem. Um gradiente que sempre acompanha o tamanho
+            // real do conteúdo (em vez de uma altura fixa "no olho") garante
+            // que texto/botões sempre pousem sobre um fundo sólido e
+            // legível, não importa a altura do aparelho.
             Positioned(
               left: 0,
               right: 0,
@@ -396,15 +394,6 @@ class OnboardingScreen extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _PageIndicator(selected: true),
-                              _PageIndicator(),
-                              _PageIndicator(),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
                           const Text(
                             'Primeiro acesso? Toque em Começar para criar '
                             'sua conta.',
@@ -446,25 +435,6 @@ class OnboardingScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _PageIndicator extends StatelessWidget {
-  final bool selected;
-
-  const _PageIndicator({this.selected = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: selected ? 10 : 8,
-      height: selected ? 10 : 8,
-      margin: const EdgeInsets.symmetric(horizontal: 5),
-      decoration: BoxDecoration(
-        color: selected ? AppColors.secondary : AppColors.lightBlue,
-        shape: BoxShape.circle,
       ),
     );
   }
