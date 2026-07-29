@@ -5033,8 +5033,132 @@ class _QuizScreenState extends State<QuizScreen> {
     );
   }
 
-  /// Estado exibido quando não há material nenhum (nem passado, nem
-  /// nenhum carregado pelo usuário) ou quando o texto extraído não deu
+  /// Estado exibido quando o usuário ainda não carregou NENHUM material —
+  /// mais orientado que [_buildEmptyState] genérico (título + explicação
+  /// do porquê o PDF é necessário + botão + passo a passo), porque este é
+  /// o primeiro contato de quem nunca usou o quiz e precisa entender que
+  /// precisa enviar um PDF antes, não só que "não há nada aqui".
+  Widget _buildNoMaterialState() {
+    return _PageList(
+      children: [
+        _buildHeaderRow(),
+        const SizedBox(height: 16),
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 84,
+                  height: 84,
+                  decoration: BoxDecoration(
+                    color: AppColors.lightBlue.withValues(alpha: 0.35),
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    LucideIcons.fileUp,
+                    size: 38,
+                    color: AppColors.secondary,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Primeiro carregue um PDF',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.primary,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Para criar um quiz, envie um material de estudo em PDF. '
+                  'Depois disso, o app vai gerar perguntas com base no '
+                  'conteúdo do arquivo.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w400,
+                    color: AppColors.mutedText,
+                    height: 1.4,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                PrimaryButton(
+                  label: 'Carregar PDF agora',
+                  icon: LucideIcons.upload,
+                  onPressed: () {
+                    mainShellTabIndex.value = 1;
+                    Navigator.popUntil(context, (route) => route.isFirst);
+                  },
+                ),
+                const SizedBox(height: 26),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: kCardDecoration,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildQuizStepRow(number: 1, text: 'Carregue seu PDF'),
+                      const SizedBox(height: 12),
+                      _buildQuizStepRow(number: 2, text: 'Aguarde o resumo'),
+                      const SizedBox(height: 12),
+                      _buildQuizStepRow(number: 3, text: 'Responda o quiz'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQuizStepRow({required int number, required String text}) {
+    return Row(
+      children: [
+        Container(
+          width: 26,
+          height: 26,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.secondary,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            '$number',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              decoration: TextDecoration.none,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primary,
+              decoration: TextDecoration.none,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Estado exibido quando há material, mas o texto extraído não deu
   /// termos/frases suficientes para montar um quiz — nunca uma tela
   /// vermelha, sempre essa mensagem amigável com um jeito de voltar.
   Widget _buildEmptyState({required String message}) {
@@ -5132,10 +5256,7 @@ class _QuizScreenState extends State<QuizScreen> {
       );
     }
     if (_resolvedMaterial == null) {
-      return _buildEmptyState(
-        message: 'Nenhum material carregado. Carregue um PDF em "Material '
-            'de estudo" para gerar um quiz.',
-      );
+      return _buildNoMaterialState();
     }
     if (_questions.isEmpty) {
       return _buildEmptyState(

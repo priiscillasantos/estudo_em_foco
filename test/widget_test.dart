@@ -956,6 +956,108 @@ void main() {
     );
   });
 
+  group('orientação do quiz quando não há PDF carregado (AJUSTE 5)', () {
+    testWidgets(
+      'sem nenhum material carregado, mostra título/explicação/botão de '
+      'orientação (não a mensagem técnica antiga) e o botão leva para '
+      'Material de estudo',
+      (WidgetTester tester) async {
+        final account = await LocalStore.signUp(
+          name: 'Aluno Sem PDF',
+          email: 'aluno.sempdf@estudo.com',
+          password: 'senha123',
+        );
+        currentAccount.value = account;
+        currentProgress.value = await LocalStore.loadProgress(account.email);
+        mainShellTabIndex.value = 0;
+
+        await tester.pumpWidget(const MaterialApp(home: MainShell()));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NavigationBar),
+            matching: find.text('Quiz'),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Primeiro carregue um PDF'), findsOneWidget);
+        expect(
+          find.text(
+            'Para criar um quiz, envie um material de estudo em PDF. '
+            'Depois disso, o app vai gerar perguntas com base no '
+            'conteúdo do arquivo.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Carregar PDF agora'), findsOneWidget);
+        // Passo a passo em 3 etapas.
+        expect(find.text('Carregue seu PDF'), findsOneWidget);
+        expect(find.text('Aguarde o resumo'), findsOneWidget);
+        expect(find.text('Responda o quiz'), findsOneWidget);
+        // Nunca a mensagem técnica antiga.
+        expect(find.textContaining('Nenhum material carregado'), findsNothing);
+
+        await tester.ensureVisible(find.text('Carregar PDF agora'));
+        await tester.tap(find.text('Carregar PDF agora'));
+        await tester.pumpAndSettle();
+
+        expect(mainShellTabIndex.value, 1);
+        expect(find.byType(MaterialStudyPage), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets(
+      'depois de carregar um PDF com resumo, a aba Quiz volta a gerar o '
+      'quiz normalmente (não fica presa na orientação de "sem PDF")',
+      (WidgetTester tester) async {
+        const transdutores =
+            'Esta aula aborda os sistemas de medição, os transdutores, '
+            'sensores e atuadores. Os sensores convertem grandezas '
+            'físicas, como temperatura, pressão e movimento, em sinais '
+            'elétricos.';
+        final account = await LocalStore.signUp(
+          name: 'Aluno Com PDF',
+          email: 'aluno.compdf@estudo.com',
+          password: 'senha123',
+        );
+        await LocalStore.saveMaterials(account.email, [
+          StudyMaterial(
+            id: 'material-com-pdf-1',
+            fileName: 'aula-transdutores.pdf',
+            userSummary: transdutores,
+            extractedText: transdutores,
+            extractionStatus: PdfExtractionStatus.success,
+            generatedSummary: transdutores,
+            summaryStatus: SummaryStatus.success,
+          ),
+        ]);
+        currentAccount.value = account;
+        currentProgress.value = await LocalStore.loadProgress(account.email);
+        mainShellTabIndex.value = 0;
+
+        await tester.pumpWidget(const MaterialApp(home: MainShell()));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NavigationBar),
+            matching: find.text('Quiz'),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Primeiro carregue um PDF'), findsNothing);
+        expect(find.text('Pergunta 1 de 3'), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  });
+
   group('zoom button enablement (Leitura do material)', () {
     test('"-" disabled while the viewer is not ready yet', () {
       expect(
