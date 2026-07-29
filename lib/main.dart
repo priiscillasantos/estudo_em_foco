@@ -91,6 +91,21 @@ void goToMainShellHome(BuildContext context) {
   Navigator.of(context).popUntil((route) => route.isFirst);
 }
 
+/// Regra central de navegação do botão voltar (interno do app, do
+/// navegador ou do Android) enquanto o usuário está numa aba do
+/// [MainShell] SEM nenhuma rota própria empilhada por cima (ex.: voltar
+/// estando direto na aba Quiz, não numa tela de Quiz aberta por um card
+/// de material). Mapeia cada aba para a "tela anterior segura": Estudos
+/// -> Início; Quiz -> Estudos (o quiz não faz sentido sem material
+/// carregado); Perfil -> Início. Início não entra no mapa — fica onde
+/// está (ver o [PopScope] de [MainShell]).
+///
+/// Quando HÁ uma rota empilhada de verdade por cima do shell (leitor de
+/// PDF, quiz aberto de um card de material, feedback do quiz), o voltar
+/// não passa por aqui: é um pop comum do [Navigator], que já revela o
+/// shell por baixo corretamente.
+const Map<int, int> kMainShellBackFallbackTab = {1: 0, 2: 1, 3: 0};
+
 /// Largura máxima da "moldura" que faz o app parecer um celular no Chrome
 /// desktop, em vez de esticar por toda a largura da janela — a Leitura do
 /// material é a única exceção (ver [MaterialReaderPage.routeName]).
@@ -1041,14 +1056,16 @@ class _MainShellState extends State<MainShell> {
     // Navigator, não apaga essas entradas) — é assim que o botão voltar
     // do celular conseguia "reaparecer" no login mesmo com sessão ativa,
     // sobretudo depois de várias telas empilhadas (upload de PDF, quiz,
-    // feedback). Se o usuário está numa aba diferente de "Início", voltar
-    // primeiro leva pra Início; se já está em Início, o voltar não faz
-    // nada — nunca sai do app de forma brusca nem cai no login/onboarding.
+    // feedback). Cada aba tem sua "tela anterior segura" definida em
+    // [kMainShellBackFallbackTab] (ex.: Quiz -> Estudos, não Início); se
+    // já está em Início, o voltar não faz nada — nunca sai do app de
+    // forma brusca nem cai no login/onboarding.
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
-        if (_selectedIndex != 0) _selectTab(0);
+        final fallbackTab = kMainShellBackFallbackTab[_selectedIndex];
+        if (fallbackTab != null) _selectTab(fallbackTab);
       },
       child: Scaffold(
         body: IndexedStack(

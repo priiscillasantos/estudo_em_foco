@@ -1321,6 +1321,101 @@ void main() {
     );
   });
 
+  group('regra de voltar por aba do shell (kMainShellBackFallbackTab)', () {
+    Future<UserAccount> reachMainShellOnTab(
+      WidgetTester tester,
+      String email,
+      String navDestinationLabel,
+    ) async {
+      final account = await LocalStore.signUp(
+        name: 'Aluno Fallback',
+        email: email,
+        password: 'senha123',
+      );
+      currentAccount.value = account;
+      currentProgress.value = await LocalStore.loadProgress(account.email);
+      mainShellTabIndex.value = 0;
+
+      await tester.pumpWidget(const MaterialApp(home: MainShell()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text(navDestinationLabel),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return account;
+    }
+
+    testWidgets(
+      'Estudos (sem PDF aberto) + voltar -> Início, nunca login',
+      (WidgetTester tester) async {
+        await reachMainShellOnTab(
+          tester,
+          'aluno.fallback.estudos@estudo.com',
+          'Estudos',
+        );
+        expect(mainShellTabIndex.value, 1);
+
+        final shellContext = tester.element(find.byType(MainShell));
+        await Navigator.of(shellContext).maybePop();
+        await tester.pumpAndSettle();
+
+        expect(mainShellTabIndex.value, 0);
+        expect(find.byType(OnboardingScreen), findsNothing);
+        expect(find.byType(LoginScreen), findsNothing);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets(
+      'Quiz (aberto pela aba, sem PDF específico) + voltar -> Estudos, '
+      'NÃO Início — o quiz não faz sentido sem material carregado',
+      (WidgetTester tester) async {
+        await reachMainShellOnTab(
+          tester,
+          'aluno.fallback.quiz@estudo.com',
+          'Quiz',
+        );
+        expect(mainShellTabIndex.value, 2);
+
+        final shellContext = tester.element(find.byType(MainShell));
+        await Navigator.of(shellContext).maybePop();
+        await tester.pumpAndSettle();
+
+        expect(mainShellTabIndex.value, 1);
+        expect(find.byType(OnboardingScreen), findsNothing);
+        expect(find.byType(LoginScreen), findsNothing);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets('Perfil + voltar -> Início, nunca login', (
+      WidgetTester tester,
+    ) async {
+      await reachMainShellOnTab(
+        tester,
+        'aluno.fallback.perfil@estudo.com',
+        'Perfil',
+      );
+      expect(mainShellTabIndex.value, 3);
+
+      final shellContext = tester.element(find.byType(MainShell));
+      await Navigator.of(shellContext).maybePop();
+      await tester.pumpAndSettle();
+
+      expect(mainShellTabIndex.value, 0);
+      expect(find.byType(OnboardingScreen), findsNothing);
+      expect(find.byType(LoginScreen), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  });
+
   group('zoom button enablement (Leitura do material)', () {
     test('"-" disabled while the viewer is not ready yet', () {
       expect(
