@@ -360,53 +360,87 @@ class OnboardingScreen extends StatelessWidget {
                 fit: BoxFit.cover,
               ),
             ),
+            // Painel inferior com gradiente: o subtítulo "Organize seus
+            // estudos..." já vem DESENHADO na própria imagem de fundo, numa
+            // posição proporcional à altura da tela — em celulares mais
+            // altos/estreitos que a prévia usada no design, os indicadores/
+            // texto abaixo (que ficam mais altos por ficarem ancorados só
+            // no fundo) acabavam caindo bem em cima desse texto da imagem,
+            // parecendo um erro visual. Um gradiente que sempre acompanha o
+            // tamanho real do conteúdo (em vez de uma altura fixa "no
+            // olho") garante que indicadores/texto/botões sempre pousem
+            // sobre um fundo sólido e legível, não importa a altura do
+            // aparelho.
             Positioned(
-              left: 24,
-              right: 24,
-              bottom: 28,
-              child: SafeArea(
-                top: false,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _PageIndicator(selected: true),
-                        _PageIndicator(),
-                        _PageIndicator(),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    const Text(
-                      'Primeiro acesso? Toque em Começar para criar sua '
-                      'conta.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.mutedText,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      AppColors.background.withValues(alpha: 0),
+                      AppColors.background,
+                    ],
+                    stops: const [0.0, 0.55],
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 64, 24, 0),
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 28),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _PageIndicator(selected: true),
+                              _PageIndicator(),
+                              _PageIndicator(),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          const Text(
+                            'Primeiro acesso? Toque em Começar para criar '
+                            'sua conta.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.mutedText,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          PrimaryButton(
+                            label: 'Começar',
+                            height: 56,
+                            borderRadius: 28,
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const LoginScreen(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          SecondaryTextButton(
+                            label: 'Já tenho uma conta',
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const LoginScreen(),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    PrimaryButton(
-                      label: 'Começar',
-                      height: 56,
-                      borderRadius: 28,
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    SecondaryTextButton(
-                      label: 'Já tenho uma conta',
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
