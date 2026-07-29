@@ -377,7 +377,18 @@ class OnboardingScreen extends StatelessWidget {
                         _PageIndicator(),
                       ],
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Primeiro acesso? Toque em Começar para criar sua '
+                      'conta.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.mutedText,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     PrimaryButton(
                       label: 'Começar',
                       height: 56,
@@ -456,6 +467,22 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _submitting = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _prefillLastEmail();
+  }
+
+  /// Pré-preenche o campo de e-mail com o último e-mail usado com sucesso
+  /// em login/cadastro neste navegador (ver `LocalStore.loadLastEmail`) —
+  /// nunca a senha, que continua sempre vazia. Sobrevive ao "Sair"
+  /// (`LocalStore.logout` só limpa a sessão ativa, não essa lembrança).
+  Future<void> _prefillLastEmail() async {
+    final lastEmail = await LocalStore.loadLastEmail();
+    if (!mounted || lastEmail == null || lastEmail.isEmpty) return;
+    _emailController.text = lastEmail;
+  }
 
   @override
   void dispose() {
@@ -621,7 +648,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 4),
                       SecondaryTextButton(
-                        label: 'Criar conta',
+                        label: 'Primeiro acesso? Criar conta',
                         onPressed: () => Navigator.push(
                           context,
                           MaterialPageRoute(

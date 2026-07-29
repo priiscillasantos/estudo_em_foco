@@ -323,11 +323,18 @@ class LocalStore {
 
   static const _accountsKey = 'accounts';
   static const _sessionKey = 'session_email';
+  // Guarda só o e-mail (nunca a senha) do último login/cadastro bem-sucedido,
+  // para pré-preencher o campo de e-mail na tela de Login (ver
+  // `_LoginScreenState`). Deliberadamente uma chave SEPARADA de
+  // [_sessionKey]: "Sair" limpa a sessão ativa, mas não deve apagar essa
+  // lembrança — o campo de e-mail continua preenchido depois do logout.
+  static const _lastEmailKey = 'last_used_email';
 
   static String _materialsKey(String email) => 'materials_$email';
   static String _progressKey(String email) => 'progress_$email';
   static String _annotationsKey(String email) => 'annotations_$email';
 
+  static String? _memoryLastEmail;
   static List<UserAccount>? _memoryAccounts;
   static final Map<String, List<StudyMaterial>> _memoryMaterials = {};
   static final Map<String, UserProgress> _memoryProgress = {};
@@ -401,6 +408,7 @@ class LocalStore {
     );
     await _saveAccounts([...accounts, account]);
     await _setSession(normalizedEmail);
+    await _saveLastEmail(normalizedEmail);
     return account;
   }
 
@@ -416,13 +424,51 @@ class LocalStore {
         .where((a) => a.email == normalizedEmail)
         .firstOrNull;
     if (account == null) {
-      throw const AuthException('Não encontramos uma conta com esse e-mail.');
+      throw const AuthException(
+        'Não encontramos uma conta com esse e-mail. Se for seu primeiro '
+        'acesso, toque em Criar conta.',
+      );
     }
     if (account.password != password) {
       throw const AuthException('E-mail ou senha incorretos.');
     }
     await _setSession(normalizedEmail);
+    await _saveLastEmail(normalizedEmail);
     return account;
+  }
+
+  /// Guarda só o e-mail (nunca a senha) do login/cadastro bem-sucedido mais
+  /// recente, para pré-preencher o campo de e-mail na próxima vez que a
+  /// tela de Login abrir (ver [loadLastEmail]). Sobrescreve o e-mail
+  /// anterior se outra conta fizer login depois.
+  static Future<void> _saveLastEmail(String email) async {
+    _memoryLastEmail = email;
+    try {
+      final prefs = await _prefs();
+      await prefs.setString(_lastEmailKey, email);
+    } catch (e) {
+      debugPrint(
+        'LocalStore: não foi possível salvar o último e-mail usado '
+        '(mantido em memória apenas para esta sessão): $e',
+      );
+    }
+  }
+
+  /// Devolve o último e-mail usado com sucesso em login/cadastro, ou `null`
+  /// se nenhum usuário nunca entrou neste navegador. Nunca lê/expõe senha
+  /// nenhuma — só o e-mail.
+  static Future<String?> loadLastEmail() async {
+    try {
+      final prefs = await _prefs();
+      final email = prefs.getString(_lastEmailKey);
+      return (email == null || email.isEmpty) ? null : email;
+    } catch (e) {
+      debugPrint(
+        'LocalStore: não foi possível ler o último e-mail usado, usando '
+        'memória temporária desta sessão: $e',
+      );
+      return _memoryLastEmail;
+    }
   }
 
   static Future<void> _setSession(String? email) async {

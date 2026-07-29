@@ -67,8 +67,8 @@ void main() {
 
     expect(find.byType(LoginScreen), findsOneWidget);
 
-    await tester.ensureVisible(find.text('Criar conta'));
-    await tester.tap(find.text('Criar conta'));
+    await tester.ensureVisible(find.text('Primeiro acesso? Criar conta'));
+    await tester.tap(find.text('Primeiro acesso? Criar conta'));
     await tester.pumpAndSettle();
 
     expect(find.byType(SignUpScreen), findsOneWidget);
@@ -106,8 +106,8 @@ void main() {
       await tester.tap(find.text('Começar'));
       await tester.pumpAndSettle();
 
-      await tester.ensureVisible(find.text('Criar conta'));
-      await tester.tap(find.text('Criar conta'));
+      await tester.ensureVisible(find.text('Primeiro acesso? Criar conta'));
+      await tester.tap(find.text('Primeiro acesso? Criar conta'));
       await tester.pumpAndSettle();
 
       final fields = find.byType(TextFormField);
@@ -140,8 +140,8 @@ void main() {
     'their own name/e-mail in Perfil, and logout always returns to Início',
     (WidgetTester tester) async {
       Future<void> signUp(String name, String email, String password) async {
-        await tester.ensureVisible(find.text('Criar conta'));
-        await tester.tap(find.text('Criar conta'));
+        await tester.ensureVisible(find.text('Primeiro acesso? Criar conta'));
+        await tester.tap(find.text('Primeiro acesso? Criar conta'));
         await tester.pumpAndSettle();
 
         final fields = find.byType(TextFormField);
@@ -222,8 +222,8 @@ void main() {
       }
 
       Future<void> signUp(String name, String email, String password) async {
-        await tester.ensureVisible(find.text('Criar conta'));
-        await tester.tap(find.text('Criar conta'));
+        await tester.ensureVisible(find.text('Primeiro acesso? Criar conta'));
+        await tester.tap(find.text('Primeiro acesso? Criar conta'));
         await tester.pumpAndSettle();
 
         final fields = find.byType(TextFormField);
@@ -457,6 +457,158 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'onboarding mostra a orientação de primeiro acesso e o link de login '
+    'convida a criar conta',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(const EstudoEmFocoApp());
+      expect(
+        find.text('Primeiro acesso? Toque em Começar para criar sua conta.'),
+        findsOneWidget,
+      );
+
+      await tester.ensureVisible(find.text('Começar'));
+      await tester.tap(find.text('Começar'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.text('Primeiro acesso? Criar conta'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'e-mail inexistente mostra mensagem orientando a criar conta',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(const EstudoEmFocoApp());
+      await tester.ensureVisible(find.text('Já tenho uma conta'));
+      await tester.tap(find.text('Já tenho uma conta'));
+      await tester.pumpAndSettle();
+
+      final fields = find.byType(TextFormField);
+      await tester.enterText(fields.at(0), 'ninguem@nao-existe.com');
+      await tester.enterText(fields.at(1), 'qualquersenha');
+      await tester.ensureVisible(find.text('Entrar'));
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Não encontramos uma conta com esse e-mail. Se for seu primeiro '
+          'acesso, toque em Criar conta.',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'lembra o último e-mail usado (nunca a senha) e mantém isso depois do '
+    'logout; outro usuário que entrar depois substitui o e-mail lembrado',
+    (WidgetTester tester) async {
+      Future<void> logout() async {
+        await tester.tap(find.text('Perfil'));
+        await tester.pumpAndSettle();
+        final profileScrollable = find.descendant(
+          of: find.byType(ProfilePage),
+          matching: find.byType(Scrollable),
+        );
+        await tester.scrollUntilVisible(
+          find.text('Sair da conta'),
+          300,
+          scrollable: profileScrollable,
+        );
+        await tester.tap(find.text('Sair da conta'));
+        await tester.pumpAndSettle();
+      }
+
+      // Cadastra e entra com o e-mail A.
+      await tester.pumpWidget(const EstudoEmFocoApp());
+      await tester.ensureVisible(find.text('Começar'));
+      await tester.tap(find.text('Começar'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Primeiro acesso? Criar conta'));
+      await tester.tap(find.text('Primeiro acesso? Criar conta'));
+      await tester.pumpAndSettle();
+
+      final signUpFieldsA = find.byType(TextFormField);
+      await tester.enterText(signUpFieldsA.at(0), 'Aluno A');
+      await tester.enterText(signUpFieldsA.at(1), 'aluno.a@estudo.com');
+      await tester.enterText(signUpFieldsA.at(2), 'senhaA123');
+      await tester.ensureVisible(find.text('Cadastrar'));
+      await tester.tap(find.text('Cadastrar'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MainShell), findsOneWidget);
+
+      await logout();
+      expect(find.byType(OnboardingScreen), findsOneWidget);
+
+      // Volta para o login: e-mail A preenchido, senha sempre vazia.
+      await tester.ensureVisible(find.text('Já tenho uma conta'));
+      await tester.tap(find.text('Já tenho uma conta'));
+      await tester.pumpAndSettle();
+
+      final loginFieldsA = find.byType(TextFormField);
+      expect(
+        tester.widget<TextFormField>(loginFieldsA.at(0)).controller?.text,
+        'aluno.a@estudo.com',
+      );
+      expect(
+        tester.widget<TextFormField>(loginFieldsA.at(1)).controller?.text,
+        isEmpty,
+      );
+
+      // Entra de novo com A.
+      await tester.enterText(loginFieldsA.at(1), 'senhaA123');
+      await tester.ensureVisible(find.text('Entrar'));
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MainShell), findsOneWidget);
+
+      await logout();
+
+      // Cadastra o e-mail B: deve substituir o e-mail lembrado. Passa pelo
+      // Login primeiro (o link "Primeiro acesso? Criar conta" fica na tela
+      // de Login, não na Onboarding).
+      await tester.ensureVisible(find.text('Já tenho uma conta'));
+      await tester.tap(find.text('Já tenho uma conta'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Primeiro acesso? Criar conta'));
+      await tester.tap(find.text('Primeiro acesso? Criar conta'));
+      await tester.pumpAndSettle();
+
+      final signUpFieldsB = find.byType(TextFormField);
+      await tester.enterText(signUpFieldsB.at(0), 'Aluno B');
+      await tester.enterText(signUpFieldsB.at(1), 'aluno.b@estudo.com');
+      await tester.enterText(signUpFieldsB.at(2), 'senhaB123');
+      await tester.ensureVisible(find.text('Cadastrar'));
+      await tester.tap(find.text('Cadastrar'));
+      await tester.pumpAndSettle();
+
+      await logout();
+
+      await tester.ensureVisible(find.text('Já tenho uma conta'));
+      await tester.tap(find.text('Já tenho uma conta'));
+      await tester.pumpAndSettle();
+
+      final loginFieldsB = find.byType(TextFormField);
+      expect(
+        tester.widget<TextFormField>(loginFieldsB.at(0)).controller?.text,
+        'aluno.b@estudo.com',
+      );
+      expect(
+        tester.widget<TextFormField>(loginFieldsB.at(1)).controller?.text,
+        isEmpty,
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets('main shell redirects to login without an identified user', (
     WidgetTester tester,
