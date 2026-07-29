@@ -1058,6 +1058,269 @@ void main() {
     );
   });
 
+  group('BUG 1/2 — PDF some após quiz e voltar do leitor sai do app', () {
+    const transdutores =
+        'Esta aula aborda os sistemas de medição, os transdutores, '
+        'sensores e atuadores. Os sensores convertem grandezas físicas, '
+        'como temperatura, pressão e movimento, em sinais elétricos.';
+
+    Future<void> answerCurrentQuestionAndAdvance(WidgetTester tester) async {
+      final firstOption = find
+          .descendant(
+            of: find.byType(QuizScreen),
+            matching: find.byType(InkWell),
+          )
+          .at(2);
+      await tester.ensureVisible(firstOption);
+      await tester.tap(firstOption);
+      await tester.pumpAndSettle();
+      final resultButton = find.text('Ver resultado');
+      if (tester.any(resultButton)) {
+        await tester.ensureVisible(resultButton);
+        await tester.tap(resultButton);
+      } else {
+        final nextButton = find.text('Próxima pergunta');
+        await tester.ensureVisible(nextButton);
+        await tester.tap(nextButton);
+      }
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'BUG 1: voltar do Feedback do quiz para Início (ícone de casa ou '
+      '"Voltar ao início") reaproveita o MainShell existente, nunca cria '
+      'um novo — é isso que evita perder os bytes do PDF mantidos só em '
+      'memória em MaterialStudyPage (nunca persistidos no armazenamento '
+      'local)',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(800, 2000);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        for (final useHouseIcon in [false, true]) {
+          final account = await LocalStore.signUp(
+            name: 'Aluno Bug1',
+            email: useHouseIcon
+                ? 'bug1.casa@estudo.com'
+                : 'bug1.botao@estudo.com',
+            password: 'senha123',
+          );
+          await LocalStore.saveMaterials(account.email, [
+            StudyMaterial(
+              id: 'material-bug1',
+              fileName: 'aula-transdutores.pdf',
+              userSummary: transdutores,
+              extractedText: transdutores,
+              extractionStatus: PdfExtractionStatus.success,
+              generatedSummary: transdutores,
+              summaryStatus: SummaryStatus.success,
+            ),
+          ]);
+          currentAccount.value = account;
+          currentProgress.value = await LocalStore.loadProgress(
+            account.email,
+          );
+          mainShellTabIndex.value = 0;
+
+          await tester.pumpWidget(const MaterialApp(home: MainShell()));
+          await tester.pumpAndSettle();
+
+          // skipOffstage:false — a aba "Estudos" começa inativa (Início é
+          // a aba inicial) e o IndexedStack a esconde via
+          // Visibility(visible:false); os finders por padrão ignoram
+          // conteúdo "offstage".
+          final materialStudyPageStateBefore = tester.state(
+            find.byType(MaterialStudyPage, skipOffstage: false),
+          );
+
+          await tester.tap(
+            find.descendant(
+              of: find.byType(NavigationBar),
+              matching: find.text('Quiz'),
+            ),
+          );
+          await tester.pumpAndSettle();
+          for (var i = 0; i < 3; i++) {
+            await answerCurrentQuestionAndAdvance(tester);
+          }
+          expect(find.byType(PerformanceScreen), findsOneWidget);
+
+          if (useHouseIcon) {
+            await tester.tap(
+              find.descendant(
+                of: find.byType(AppBar),
+                matching: find.byIcon(LucideIcons.house),
+              ),
+            );
+          } else {
+            await tester.ensureVisible(find.text('Voltar ao início'));
+            await tester.tap(find.text('Voltar ao início'));
+          }
+          await tester.pumpAndSettle();
+
+          expect(find.byType(PerformanceScreen), findsNothing);
+          expect(find.byType(MainShell), findsOneWidget);
+          final materialStudyPageStateAfter = tester.state(
+            find.byType(MaterialStudyPage, skipOffstage: false),
+          );
+          expect(
+            identical(
+              materialStudyPageStateBefore,
+              materialStudyPageStateAfter,
+            ),
+            isTrue,
+            reason:
+                'MainShell/MaterialStudyPage foi recriado do zero ao '
+                'voltar do Feedback — isso perderia os bytes do PDF '
+                'mantidos só em memória (nunca persistidos no '
+                'armazenamento local)',
+          );
+
+          await tester.pumpWidget(const SizedBox.shrink());
+        }
+      },
+    );
+
+    testWidgets(
+      'BUG 2: o botão voltar interno do leitor de PDF nunca sai do app '
+      'nem derruba a sessão — sempre volta para uma tela dentro do app',
+      (WidgetTester tester) async {
+        final account = await LocalStore.signUp(
+          name: 'Aluno Bug2',
+          email: 'aluno.bug2@estudo.com',
+          password: 'senha123',
+        );
+        await LocalStore.saveMaterials(account.email, [
+          StudyMaterial(
+            id: 'material-bug2',
+            fileName: 'aula-transdutores.pdf',
+            userSummary: transdutores,
+            // "Já processado" (extração feita ANTES dos bytes se
+            // perderem): pending renderia um CircularProgressIndicator
+            // indeterminado em Estudos e travaria o pumpAndSettle.
+            extractedText: transdutores,
+            extractionStatus: PdfExtractionStatus.success,
+            generatedSummary: transdutores,
+            summaryStatus: SummaryStatus.success,
+          ),
+        ]);
+        currentAccount.value = account;
+        currentProgress.value = await LocalStore.loadProgress(account.email);
+        mainShellTabIndex.value = 0;
+
+        await tester.pumpWidget(const MaterialApp(home: MainShell()));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NavigationBar),
+            matching: find.text('Estudos'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        // O card de material tem um overflow pré-existente e fora deste
+        // escopo (o botão "Ler material" não cabe na largura de 800px do
+        // teste padrão, ao lado de "Responder quiz") — consome o aviso
+        // aqui para não derrubar este teste, que é sobre o voltar do
+        // leitor, não sobre o layout do card.
+        tester.takeException();
+
+        await tester.ensureVisible(find.text('Ler material'));
+        await tester.tap(find.text('Ler material'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(MaterialReaderPage), findsOneWidget);
+
+        // Botão voltar interno do leitor (o próprio app, não o do
+        // navegador/Android) — como o material carregado do
+        // armazenamento não tem bytes em memória (nunca persistidos), a
+        // tela mostra o estado "PDF precisa ser recarregado", cujo botão
+        // passa pelo mesmo caminho de código ([_goBackSafely]) do voltar
+        // do cabeçalho.
+        await tester.ensureVisible(
+          find.text('Voltar para Material de estudo'),
+        );
+        await tester.tap(find.text('Voltar para Material de estudo'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(MaterialReaderPage), findsNothing);
+        expect(find.byType(MainShell), findsOneWidget);
+        expect(find.byType(OnboardingScreen), findsNothing);
+        expect(find.byType(LoginScreen), findsNothing);
+        // Volta para a aba Estudos (de onde o leitor foi aberto), com a
+        // sessão intacta — não precisa ser especificamente Início.
+        expect(find.byType(MaterialStudyPage), findsOneWidget);
+        expect(currentAccount.value?.email, 'aluno.bug2@estudo.com');
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets(
+      'BUG 2: voltar do navegador/Android estando no leitor de PDF '
+      'também nunca sai do app nem cai em login/onboarding',
+      (WidgetTester tester) async {
+        final account = await LocalStore.signUp(
+          name: 'Aluno Bug2 Back',
+          email: 'aluno.bug2back@estudo.com',
+          password: 'senha123',
+        );
+        await LocalStore.saveMaterials(account.email, [
+          StudyMaterial(
+            id: 'material-bug2-back',
+            fileName: 'aula-transdutores.pdf',
+            userSummary: transdutores,
+            extractedText: transdutores,
+            extractionStatus: PdfExtractionStatus.success,
+            generatedSummary: transdutores,
+            summaryStatus: SummaryStatus.success,
+          ),
+        ]);
+        currentAccount.value = account;
+        currentProgress.value = await LocalStore.loadProgress(account.email);
+        mainShellTabIndex.value = 0;
+
+        await tester.pumpWidget(const MaterialApp(home: MainShell()));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NavigationBar),
+            matching: find.text('Estudos'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        // O card de material tem um overflow pré-existente e fora deste
+        // escopo (o botão "Ler material" não cabe na largura de 800px do
+        // teste padrão, ao lado de "Responder quiz") — consome o aviso
+        // aqui para não derrubar este teste, que é sobre o voltar do
+        // leitor, não sobre o layout do card.
+        tester.takeException();
+
+        await tester.ensureVisible(find.text('Ler material'));
+        await tester.tap(find.text('Ler material'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(MaterialReaderPage), findsOneWidget);
+
+        final readerContext = tester.element(find.byType(MaterialReaderPage));
+        await Navigator.of(readerContext).maybePop();
+        await tester.pumpAndSettle();
+
+        expect(find.byType(MaterialReaderPage), findsNothing);
+        expect(find.byType(MainShell), findsOneWidget);
+        expect(find.byType(OnboardingScreen), findsNothing);
+        expect(find.byType(LoginScreen), findsNothing);
+        // Volta para a aba Estudos (de onde o leitor foi aberto), com a
+        // sessão intacta — não precisa ser especificamente Início.
+        expect(find.byType(MaterialStudyPage), findsOneWidget);
+        expect(currentAccount.value?.email, 'aluno.bug2back@estudo.com');
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  });
+
   group('zoom button enablement (Leitura do material)', () {
     test('"-" disabled while the viewer is not ready yet', () {
       expect(

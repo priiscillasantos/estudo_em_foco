@@ -2835,6 +2835,27 @@ class _MaterialReaderPageState extends State<MaterialReaderPage> {
     );
   }
 
+  /// Volta de forma segura, seja pelo botão interno (seta no cabeçalho ou
+  /// nos estados de "PDF precisa ser recarregado"/erro) ou pelo voltar do
+  /// navegador/Android (via o [PopScope] em [build]): se há uma rota
+  /// anterior de verdade, só faz o pop normal (revela Material de
+  /// estudo/MainShell por baixo). Se por algum motivo não houver
+  /// (ex.: leitor aberto sem o shell por baixo), NUNCA deixa o voltar
+  /// escapar do app — cai numa tela segura dentro dele (Material de
+  /// estudo), nunca em login/onboarding nem "sai do Chrome".
+  void _goBackSafely() {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+    mainShellTabIndex.value = 1;
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const MainShell()),
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     debugPrint(
@@ -2843,16 +2864,29 @@ class _MaterialReaderPageState extends State<MaterialReaderPage> {
     // TEMP DIAGNÓSTICO: qualquer exceção síncrona durante a montagem desta
     // tela (ex.: um erro inesperado ao construir o PdfViewer) cai aqui em
     // vez de derrubar o app inteiro — só esta página vira a tela de erro.
+    Widget scaffold;
     try {
-      return _buildScaffold(context);
+      scaffold = _buildScaffold(context);
     } catch (e, stack) {
       debugPrint('MaterialReaderPage.build: exceção não tratada: $e');
       debugPrint('MaterialReaderPage.build stack: $stack');
-      return Scaffold(
+      scaffold = Scaffold(
         backgroundColor: const Color(0xFFEFF2F6),
         body: SafeArea(child: _buildErrorContent()),
       );
     }
+    // Intercepta TODO voltar (interno ou do navegador/Android) e passa
+    // por [_goBackSafely] — mesma defesa usada no shell autenticado
+    // (ver PopScope de [MainShell]): nunca deixa o voltar sair do app
+    // nem cair em login/onboarding com sessão ativa.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _goBackSafely();
+      },
+      child: scaffold,
+    );
   }
 
   Widget _buildScaffold(BuildContext context) {
@@ -2889,7 +2923,7 @@ class _MaterialReaderPageState extends State<MaterialReaderPage> {
       child: Row(
         children: [
           IconButton(
-            onPressed: () => Navigator.maybePop(context),
+            onPressed: _goBackSafely,
             icon: const Icon(
               LucideIcons.chevronLeft,
               color: AppColors.primary,
@@ -3578,7 +3612,7 @@ class _MaterialReaderPageState extends State<MaterialReaderPage> {
             const SizedBox(height: 20),
             PrimaryButton(
               label: 'Voltar para Material de estudo',
-              onPressed: () => Navigator.maybePop(context),
+              onPressed: _goBackSafely,
             ),
           ],
         ),
@@ -3624,7 +3658,7 @@ class _MaterialReaderPageState extends State<MaterialReaderPage> {
             const SizedBox(height: 20),
             PrimaryButton(
               label: 'Voltar para materiais',
-              onPressed: () => Navigator.maybePop(context),
+              onPressed: _goBackSafely,
             ),
           ],
         ),
@@ -5582,11 +5616,9 @@ class PerformanceScreen extends StatelessWidget {
         title: const Text('Feedback do quiz'),
         actions: [
           IconButton(
-            onPressed: () => Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (_) => const MainShell()),
-              (route) => false,
-            ),
+            // volta para o MainShell já existente (com o material/PDF em
+            // memória) em vez de criar um novo — ver [goToMainShellHome].
+            onPressed: () => goToMainShellHome(context),
             icon: const Icon(
               LucideIcons.house,
               color: AppColors.primary,
@@ -5717,11 +5749,10 @@ class PerformanceScreen extends StatelessWidget {
           ),
           SecondaryTextButton(
             label: 'Voltar ao início',
-            onPressed: () => Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (_) => const MainShell()),
-              (route) => false,
-            ),
+            // Mesmo motivo do ícone de casa acima: preserva o MainShell
+            // (e os bytes do PDF em memória em MaterialStudyPage) em vez
+            // de recriá-lo do zero.
+            onPressed: () => goToMainShellHome(context),
           ),
         ],
       ),
