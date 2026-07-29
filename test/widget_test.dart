@@ -619,6 +619,86 @@ void main() {
     expect(find.text('Entrar'), findsOneWidget);
   });
 
+  group('botão voltar com sessão ativa (AJUSTE 3)', () {
+    Future<void> signUpAndReachMainShell(WidgetTester tester) async {
+      await tester.pumpWidget(const EstudoEmFocoApp());
+      await tester.ensureVisible(find.text('Começar'));
+      await tester.tap(find.text('Começar'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Primeiro acesso? Criar conta'));
+      await tester.tap(find.text('Primeiro acesso? Criar conta'));
+      await tester.pumpAndSettle();
+
+      final fields = find.byType(TextFormField);
+      await tester.enterText(fields.at(0), 'Aluno Voltar');
+      await tester.enterText(fields.at(1), 'aluno.voltar@estudo.com');
+      await tester.enterText(fields.at(2), 'senha123');
+      await tester.ensureVisible(find.text('Cadastrar'));
+      await tester.tap(find.text('Cadastrar'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MainShell), findsOneWidget);
+    }
+
+    testWidgets(
+      'reabrir Onboarding/Login/Cadastro com sessão ativa (ex.: entrada '
+      'antiga no histórico do navegador) redireciona de volta para o app, '
+      'em vez de aparentar que a sessão foi perdida',
+      (WidgetTester tester) async {
+        await signUpAndReachMainShell(tester);
+
+        for (final stale in [
+          const OnboardingScreen(),
+          const LoginScreen(),
+          const SignUpScreen(),
+        ]) {
+          final context = tester.element(find.byType(MainShell));
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => stale),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.byType(OnboardingScreen), findsNothing);
+          expect(find.byType(LoginScreen), findsNothing);
+          expect(find.byType(SignUpScreen), findsNothing);
+          expect(find.byType(MainShell), findsOneWidget);
+          expect(find.textContaining('Olá, Aluno Voltar!'), findsOneWidget);
+        }
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets(
+      'voltar numa aba diferente de Início troca para Início dentro do '
+      'app, em vez de deixar o voltar do navegador tentar sair da sessão',
+      (WidgetTester tester) async {
+        await signUpAndReachMainShell(tester);
+
+        await tester.tap(find.text('Perfil'));
+        await tester.pumpAndSettle();
+        expect(find.text('aluno.voltar@estudo.com'), findsOneWidget);
+
+        final navigator = Navigator.of(
+          tester.element(find.byType(MainShell)),
+        );
+        // maybePop() retorna true tanto quando uma rota é removida quanto
+        // quando um PopScope intercepta o pop (RoutePopDisposition.doNotPop)
+        // — o que importa aqui é que a ROTA do MainShell continua lá (não
+        // saiu da sessão) e a aba voltou para Início.
+        await navigator.maybePop();
+        await tester.pumpAndSettle();
+
+        expect(find.byType(MainShell), findsOneWidget);
+        expect(find.text('aluno.voltar@estudo.com'), findsNothing);
+        expect(find.textContaining('Olá, Aluno Voltar!'), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  });
+
   group('zoom button enablement (Leitura do material)', () {
     test('"-" disabled while the viewer is not ready yet', () {
       expect(

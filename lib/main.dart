@@ -343,8 +343,19 @@ class _PhoneFrame extends StatelessWidget {
   }
 }
 
-class OnboardingScreen extends StatelessWidget {
+class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
+
+  @override
+  State<OnboardingScreen> createState() => _OnboardingScreenState();
+}
+
+class _OnboardingScreenState extends State<OnboardingScreen> {
+  @override
+  void initState() {
+    super.initState();
+    redirectToShellIfLoggedIn(context);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -458,6 +469,25 @@ Future<void> enterAppAfterAuth(
   );
 }
 
+/// Evita que Onboarding/Login/Cadastro fiquem visíveis com uma sessão
+/// ativa — o botão "voltar" do navegador/Android pode reabrir essas telas
+/// a partir de um histórico anterior ao login, já que [enterAppAfterAuth]
+/// substitui a pilha do [Navigator] mas não apaga entradas do histórico do
+/// navegador criadas antes dela. Chamado no `initState` dessas telas: se
+/// já existe conta logada, redireciona de volta para [MainShell] assim
+/// que o primeiro frame terminar.
+void redirectToShellIfLoggedIn(BuildContext context) {
+  if (currentAccount.value == null) return;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!context.mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const MainShell()),
+      (route) => false,
+    );
+  });
+}
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -475,6 +505,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    redirectToShellIfLoggedIn(context);
     _prefillLastEmail();
   }
 
@@ -700,6 +731,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _submitting = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    redirectToShellIfLoggedIn(context);
+  }
 
   @override
   void dispose() {
@@ -965,41 +1002,54 @@ class _MainShellState extends State<MainShell> {
       return const LoginScreen();
     }
 
-    return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: const [
-          HomePage(),
-          MaterialStudyPage(),
-          QuizScreen(),
-          ProfilePage(),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: _selectTab,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(LucideIcons.house),
-            selectedIcon: Icon(LucideIcons.house),
-            label: 'Início',
-          ),
-          NavigationDestination(
-            icon: Icon(LucideIcons.folder),
-            selectedIcon: Icon(LucideIcons.folder),
-            label: 'Estudos',
-          ),
-          NavigationDestination(
-            icon: Icon(LucideIcons.listChecks),
-            selectedIcon: Icon(LucideIcons.listChecks),
-            label: 'Quiz',
-          ),
-          NavigationDestination(
-            icon: Icon(LucideIcons.user),
-            selectedIcon: Icon(LucideIcons.user),
-            label: 'Perfil',
-          ),
-        ],
+    // Com sessão ativa, o botão voltar (navegador/Android) nunca deve
+    // fechar o app direto: se o usuário está numa aba diferente de
+    // "Início", voltar primeiro leva pra Início (a "tela anterior útil"
+    // dentro do shell, já que as abas usam IndexedStack, não o
+    // Navigator); só deixa o voltar seguir seu curso normal quando já
+    // está em Início.
+    return PopScope(
+      canPop: _selectedIndex == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _selectTab(0);
+      },
+      child: Scaffold(
+        body: IndexedStack(
+          index: _selectedIndex,
+          children: const [
+            HomePage(),
+            MaterialStudyPage(),
+            QuizScreen(),
+            ProfilePage(),
+          ],
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: _selectTab,
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(LucideIcons.house),
+              selectedIcon: Icon(LucideIcons.house),
+              label: 'Início',
+            ),
+            NavigationDestination(
+              icon: Icon(LucideIcons.folder),
+              selectedIcon: Icon(LucideIcons.folder),
+              label: 'Estudos',
+            ),
+            NavigationDestination(
+              icon: Icon(LucideIcons.listChecks),
+              selectedIcon: Icon(LucideIcons.listChecks),
+              label: 'Quiz',
+            ),
+            NavigationDestination(
+              icon: Icon(LucideIcons.user),
+              selectedIcon: Icon(LucideIcons.user),
+              label: 'Perfil',
+            ),
+          ],
+        ),
       ),
     );
   }
