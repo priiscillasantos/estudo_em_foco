@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1414,6 +1413,201 @@ void main() {
 
       await tester.pumpWidget(const SizedBox.shrink());
     });
+  });
+
+  group('botão voltar FÍSICO do Android / navegador (mensagem popRoute)', () {
+    /// Dispara exatamente a mesma mensagem de plataforma que o motor do
+    /// Flutter Web envia quando o usuário aperta o botão voltar do
+    /// Android/Chrome, e devolve as chamadas feitas em
+    /// `SystemChannels.platform` — é lá que aparece
+    /// `SystemNavigator.pop` (= "sair do site"), que o framework chama
+    /// como último recurso quando NENHUMA tela do app absorve o voltar
+    /// (ver `WidgetsBinding.handlePopRoute`).
+    Future<List<String>> pressPhysicalBack(WidgetTester tester) async {
+      final platformCalls = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          platformCalls.add(call.method);
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        'flutter/navigation',
+        const JSONMethodCodec().encodeMethodCall(
+          const MethodCall('popRoute'),
+        ),
+        (_) {},
+      );
+      await tester.pumpAndSettle();
+      return platformCalls;
+    }
+
+    Future<UserAccount> loginAndOpenTab(
+      WidgetTester tester,
+      String email,
+      int tabIndex,
+    ) async {
+      final account = await LocalStore.signUp(
+        name: 'Aluno Back',
+        email: email,
+        password: 'senha123',
+      );
+      currentAccount.value = account;
+      currentProgress.value = await LocalStore.loadProgress(account.email);
+      mainShellTabIndex.value = tabIndex;
+
+      await tester.pumpWidget(const EstudoEmFocoApp());
+      await tester.pumpAndSettle();
+      tester.takeException();
+      return account;
+    }
+
+    testWidgets(
+      'em Material de estudo (Estudos), o voltar FÍSICO vai para Início e '
+      'NUNCA chama SystemNavigator.pop (que sairia do site)',
+      (WidgetTester tester) async {
+        await loginAndOpenTab(tester, 'back.estudos@estudo.com', 1);
+        expect(mainShellTabIndex.value, 1);
+
+        final platformCalls = await pressPhysicalBack(tester);
+
+        expect(
+          platformCalls,
+          isNot(contains('SystemNavigator.pop')),
+          reason:
+              'o app deixou o voltar físico "vazar" para o navegador — é '
+              'exatamente isso que faz o Chrome sair do site/abrir as guias',
+        );
+        expect(mainShellTabIndex.value, 0);
+        expect(find.byType(MainShell), findsOneWidget);
+        expect(find.byType(LoginScreen), findsNothing);
+        expect(find.byType(OnboardingScreen), findsNothing);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets(
+      'na Home (Início), o voltar FÍSICO mantém o app aberto e NUNCA '
+      'chama SystemNavigator.pop nem cai em login',
+      (WidgetTester tester) async {
+        await loginAndOpenTab(tester, 'back.home@estudo.com', 0);
+
+        for (var i = 0; i < 3; i++) {
+          final platformCalls = await pressPhysicalBack(tester);
+          expect(platformCalls, isNot(contains('SystemNavigator.pop')));
+        }
+
+        expect(mainShellTabIndex.value, 0);
+        expect(find.byType(MainShell), findsOneWidget);
+        expect(find.byType(LoginScreen), findsNothing);
+        expect(find.byType(OnboardingScreen), findsNothing);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets(
+      'no leitor de PDF, o voltar FÍSICO volta para Material de estudo e '
+      'NUNCA chama SystemNavigator.pop',
+      (WidgetTester tester) async {
+        const baseText =
+            'Esta aula aborda os sistemas de medição, os transdutores, '
+            'sensores e atuadores.';
+        final account = await LocalStore.signUp(
+          name: 'Aluno Back Leitor',
+          email: 'back.leitor@estudo.com',
+          password: 'senha123',
+        );
+        await LocalStore.saveMaterials(account.email, [
+          StudyMaterial(
+            id: 'material-back-leitor',
+            fileName: 'aula-transdutores.pdf',
+            userSummary: baseText,
+            extractedText: baseText,
+            extractionStatus: PdfExtractionStatus.success,
+            generatedSummary: baseText,
+            summaryStatus: SummaryStatus.success,
+          ),
+        ]);
+        currentAccount.value = account;
+        currentProgress.value = await LocalStore.loadProgress(account.email);
+        mainShellTabIndex.value = 1;
+
+        await tester.pumpWidget(const EstudoEmFocoApp());
+        await tester.pumpAndSettle();
+        tester.takeException();
+
+        // Abre o leitor pela MESMA rota que "Ler material" usa em
+        // `_MaterialListCard.onRead` (mesmo `RouteSettings.name`). Não uso
+        // o tap no botão porque, dentro do frame de celular, o card tem um
+        // overflow horizontal pré-existente (fora do escopo desta
+        // correção) que joga o centro do botão fora da área clicável — o
+        // que este teste precisa exercitar é o VOLTAR dentro do leitor.
+        final materials = await LocalStore.loadMaterials(account.email);
+        final shellContext = tester.element(find.byType(MainShell));
+        Navigator.push(
+          shellContext,
+          MaterialPageRoute(
+            settings: const RouteSettings(
+              name: MaterialReaderPage.routeName,
+            ),
+            builder: (_) => MaterialReaderPage(
+              material: materials.single,
+              onPageCountResolved: (_) {},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        tester.takeException();
+        expect(find.byType(MaterialReaderPage), findsOneWidget);
+
+        final platformCalls = await pressPhysicalBack(tester);
+        tester.takeException();
+
+        expect(platformCalls, isNot(contains('SystemNavigator.pop')));
+        expect(find.byType(MaterialReaderPage), findsNothing);
+        expect(find.byType(MaterialStudyPage), findsOneWidget);
+        expect(find.byType(LoginScreen), findsNothing);
+        expect(currentAccount.value?.email, 'back.leitor@estudo.com');
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets(
+      'o app pede ao motor o modo de histórico de ENTRADA ÚNICA — é isso '
+      'que faz o voltar do navegador/Android chegar no app como popRoute '
+      'em vez de sair do site (o modo padrão "multi-entradas" pressupõe '
+      'um app usando a API Router, que este app não usa)',
+      (WidgetTester tester) async {
+        final navigationCalls = <String>[];
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.navigation,
+          (call) async {
+            navigationCalls.add(call.method);
+            return null;
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger
+              .setMockMethodCallHandler(SystemChannels.navigation, null),
+        );
+
+        await selectSafeBrowserHistoryMode();
+
+        expect(navigationCalls, contains('selectSingleEntryHistory'));
+        expect(navigationCalls, isNot(contains('selectMultiEntryHistory')));
+      },
+    );
   });
 
   group('zoom button enablement (Leitura do material)', () {

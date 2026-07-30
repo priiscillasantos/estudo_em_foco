@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -24,6 +25,7 @@ Future<void> main() async {
   // path real é tratado de forma mais confiável como histórico de
   // navegação de verdade nesses casos.
   usePathUrlStrategy();
+  await selectSafeBrowserHistoryMode();
   // Captura qualquer exceção do framework ou da plataforma (ex.: uma falha
   // assíncrona ao carregar o PDFium/WASM) que não seria pega por um
   // try/catch comum dentro de um único widget, registrando-a no console em
@@ -46,6 +48,31 @@ Future<void> main() async {
   await restoreActiveSession();
 
   runApp(const EstudoEmFocoApp());
+}
+
+/// Põe o motor do Flutter Web no modo de histórico de ENTRADA ÚNICA.
+///
+/// É o que faz o botão voltar FÍSICO do Android / do navegador não sair
+/// do site. Sem isso, num carregamento novo da página (abrir o link
+/// compartilhado no WhatsApp, digitar a URL, recarregar) o motor escolhe
+/// sozinho o modo "multi-entradas" — que pressupõe um app usando a API
+/// `Router`/rotas nomeadas para alimentar o histórico do navegador. Este
+/// app navega com `Navigator.push` direto (sem `Router`), então nesse
+/// modo o motor nunca cria uma entrada de histórico própria: o voltar do
+/// celular vai direto para a página anterior do navegador (a conversa do
+/// WhatsApp, a tela de guias) e o app nem recebe o evento — por isso
+/// interceptar só com `PopScope` não resolvia.
+///
+/// No modo de entrada única o motor mantém um par de entradas
+/// (origem + Flutter) e converte TODO voltar do navegador/Android numa
+/// mensagem `popRoute` para o app — que é exatamente o que os
+/// [PopScope] de [MainShell] e [MaterialReaderPage] já absorvem e
+/// traduzem em navegação interna segura.
+///
+/// Fora da web isso é ignorado pela plataforma. Exposto separadamente do
+/// `main()` para poder ser verificado nos testes.
+Future<void> selectSafeBrowserHistoryMode() {
+  return SystemNavigator.selectSingleEntryHistory();
 }
 
 /// Restaura a sessão ativa (ver `LocalStore.restoreSession`/
