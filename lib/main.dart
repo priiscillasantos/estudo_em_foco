@@ -26,6 +26,10 @@ Future<void> main() async {
   // navegação de verdade nesses casos.
   usePathUrlStrategy();
   await selectSafeBrowserHistoryMode();
+  // Antes de runApp de propósito: garante que este handler seja consultado
+  // no voltar ANTES do observador interno do WidgetsApp (ver
+  // [handleBrowserBack]).
+  installAppBackHandler();
   // Captura qualquer exceção do framework ou da plataforma (ex.: uma falha
   // assíncrona ao carregar o PDFium/WASM) que não seria pega por um
   // try/catch comum dentro de um único widget, registrando-a no console em
@@ -145,6 +149,67 @@ void goToMainShellHome(BuildContext context) {
 /// shell por baixo corretamente.
 const Map<int, int> kMainShellBackFallbackTab = {1: 0, 2: 1, 3: 0};
 
+/// Navigator raiz do app, usado por [handleBrowserBack] para fechar a tela
+/// empilhada atual (leitor de PDF, quiz de um material, feedback) sem
+/// depender de um `BuildContext` de tela.
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
+/// Regra ÚNICA e central do botão voltar do navegador / voltar físico do
+/// Android, aplicada ANTES de qualquer tela poder deixar o evento escapar
+/// para o navegador (ver [installAppBackHandler]).
+///
+/// Por que isto existe, e não só os [PopScope] das telas: o
+/// `WidgetsBinding` percorre seus observadores e, se NENHUM disser que
+/// tratou o voltar, ele chama `SystemNavigator.pop()` — que no Flutter Web
+/// desfaz a entrada de histórico do app e **sai do site**. Bastava então
+/// uma única tela sem `PopScope` no topo da pilha (ou um estado onde o
+/// `PopScope` não estivesse registrado) para o voltar vazar e fechar a
+/// aba. Este handler fecha esse buraco de uma vez: com sessão ativa ele
+/// SEMPRE trata o voltar.
+///
+/// Mapeamento (o mesmo pedido no ajuste): leitor de PDF/quiz/feedback ->
+/// fecha a tela e volta para o que está por baixo; Estudos -> Início;
+/// Quiz -> Estudos; Perfil -> Início; Início -> permanece em Início.
+///
+/// Sem sessão ativa devolve `false` de propósito: aí o voltar segue seu
+/// curso normal em Onboarding/Login (um usuário deslogado tem que
+/// conseguir sair do site), e login/onboarding nunca aparecem por causa
+/// do voltar enquanto existir sessão.
+bool handleBrowserBack() {
+  if (currentAccount.value == null) return false;
+  final navigator = appNavigatorKey.currentState;
+  if (navigator == null) return false;
+  // Tela empilhada sobre o shell (leitor, quiz de material, feedback):
+  // fecha só ela e revela o shell por baixo.
+  if (navigator.canPop()) {
+    navigator.pop();
+    return true;
+  }
+  // Já no shell: troca para a "tela anterior segura" da aba atual. Em
+  // Início não há para onde subir — fica onde está, mas ainda assim
+  // devolve `true` para não deixar o voltar sair do site.
+  final fallbackTab = kMainShellBackFallbackTab[mainShellTabIndex.value];
+  if (fallbackTab != null) mainShellTabIndex.value = fallbackTab;
+  return true;
+}
+
+/// Liga [handleBrowserBack] no voltar do sistema/navegador.
+///
+/// Registrado em `main()` ANTES de `runApp`, de propósito: o
+/// `WidgetsBinding` consulta os observadores na ordem em que foram
+/// adicionados, então este vem antes do observador interno do
+/// [WidgetsApp] e tem a palavra final sobre o voltar.
+class _AppBackObserver extends WidgetsBindingObserver {
+  @override
+  Future<bool> didPopRoute() async => handleBrowserBack();
+}
+
+final WidgetsBindingObserver appBackObserver = _AppBackObserver();
+
+void installAppBackHandler() {
+  WidgetsBinding.instance.addObserver(appBackObserver);
+}
+
 /// Largura máxima da "moldura" que faz o app parecer um celular no Chrome
 /// desktop, em vez de esticar por toda a largura da janela — a Leitura do
 /// material é a única exceção (ver [MaterialReaderPage.routeName]).
@@ -233,6 +298,9 @@ class EstudoEmFocoApp extends StatelessWidget {
     return MaterialApp(
       title: 'Estudo em Foco',
       debugShowCheckedModeBanner: false,
+      // Usado por [handleBrowserBack] para fechar a tela empilhada atual
+      // no voltar do navegador/Android.
+      navigatorKey: appNavigatorKey,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme:

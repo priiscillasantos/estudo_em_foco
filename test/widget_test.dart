@@ -1416,6 +1416,17 @@ void main() {
   });
 
   group('botão voltar FÍSICO do Android / navegador (mensagem popRoute)', () {
+    // Instala o mesmo handler central que `main()` instala em produção
+    // (ver [installAppBackHandler]/[handleBrowserBack]) — sem isso os
+    // testes exercitariam só os PopScope das telas, não a rede de
+    // segurança que impede o voltar de sair do site.
+    setUp(() {
+      installAppBackHandler();
+      addTearDown(
+        () => WidgetsBinding.instance.removeObserver(appBackObserver),
+      );
+    });
+
     /// Dispara exatamente a mesma mensagem de plataforma que o motor do
     /// Flutter Web envia quando o usuário aperta o botão voltar do
     /// Android/Chrome, e devolve as chamadas feitas em
@@ -1469,6 +1480,53 @@ void main() {
       tester.takeException();
       return account;
     }
+
+    testWidgets(
+      'REDE DE SEGURANÇA: mesmo numa tela SEM PopScope no topo, com sessão '
+      'ativa o voltar físico é tratado pelo handler central e NUNCA chama '
+      'SystemNavigator.pop — é este buraco que fazia a aba fechar',
+      (WidgetTester tester) async {
+        final account = await LocalStore.signUp(
+          name: 'Aluno Rede',
+          email: 'back.rede@estudo.com',
+          password: 'senha123',
+        );
+        currentAccount.value = account;
+        currentProgress.value = await LocalStore.loadProgress(account.email);
+        mainShellTabIndex.value = 0;
+
+        // Tela deliberadamente "nua": nenhum PopScope. Antes do handler
+        // central, o voltar aqui vazava para o navegador.
+        await tester.pumpWidget(
+          MaterialApp(
+            navigatorKey: appNavigatorKey,
+            home: const Scaffold(body: Text('tela sem PopScope')),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final platformCalls = await pressPhysicalBack(tester);
+
+        expect(
+          platformCalls,
+          isNot(contains('SystemNavigator.pop')),
+          reason:
+              'com sessão ativa, nenhuma tela deve conseguir deixar o '
+              'voltar escapar para o navegador',
+        );
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    test(
+      'handleBrowserBack: sem sessão ativa devolve false de propósito, para '
+      'o voltar seguir normal em Onboarding/Login',
+      () {
+        currentAccount.value = null;
+        expect(handleBrowserBack(), isFalse);
+      },
+    );
 
     testWidgets(
       'SEQUÊNCIA COMPLETA: leitor -> voltar físico -> Material de estudo '
