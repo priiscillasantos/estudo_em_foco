@@ -1471,6 +1471,99 @@ void main() {
     }
 
     testWidgets(
+      'SEQUÊNCIA COMPLETA: leitor -> voltar físico -> Material de estudo '
+      '-> voltar físico -> Início, sem NUNCA chamar SystemNavigator.pop',
+      (WidgetTester tester) async {
+        const baseText =
+            'Esta aula aborda os sistemas de medição, os transdutores, '
+            'sensores e atuadores.';
+        final account = await LocalStore.signUp(
+          name: 'Aluno Seq',
+          email: 'back.sequencia@estudo.com',
+          password: 'senha123',
+        );
+        await LocalStore.saveMaterials(account.email, [
+          StudyMaterial(
+            id: 'material-seq',
+            fileName: 'aula-transdutores.pdf',
+            userSummary: baseText,
+            extractedText: baseText,
+            extractionStatus: PdfExtractionStatus.success,
+            generatedSummary: baseText,
+            summaryStatus: SummaryStatus.success,
+          ),
+        ]);
+        currentAccount.value = account;
+        currentProgress.value = await LocalStore.loadProgress(account.email);
+        mainShellTabIndex.value = 1;
+
+        await tester.pumpWidget(const EstudoEmFocoApp());
+        await tester.pumpAndSettle();
+        tester.takeException();
+
+        final materials = await LocalStore.loadMaterials(account.email);
+        Navigator.push(
+          tester.element(find.byType(MainShell)),
+          MaterialPageRoute(
+            settings: const RouteSettings(
+              name: MaterialReaderPage.routeName,
+            ),
+            builder: (_) => MaterialReaderPage(
+              material: materials.single,
+              onPageCountResolved: (_) {},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        tester.takeException();
+        expect(find.byType(MaterialReaderPage), findsOneWidget);
+
+        // 1º voltar físico: leitor -> Material de estudo.
+        final firstBack = await pressPhysicalBack(tester);
+        tester.takeException();
+        expect(firstBack, isNot(contains('SystemNavigator.pop')));
+        expect(find.byType(MaterialReaderPage), findsNothing);
+        expect(find.byType(MaterialStudyPage), findsOneWidget);
+        expect(
+          mainShellTabIndex.value,
+          1,
+          reason: 'depois do 1º voltar o usuário deve estar em Estudos',
+        );
+
+        // 2º voltar físico: Material de estudo -> Início. É AQUI que o app
+        // saía do site no celular.
+        final secondBack = await pressPhysicalBack(tester);
+        tester.takeException();
+        expect(
+          secondBack,
+          isNot(contains('SystemNavigator.pop')),
+          reason:
+              'o 2º voltar vazou para o navegador — é exatamente o bug de '
+              'sair do site depois de voltar do leitor',
+        );
+        expect(
+          mainShellTabIndex.value,
+          0,
+          reason: 'o 2º voltar deve levar de Estudos para Início',
+        );
+        expect(find.byType(MainShell), findsOneWidget);
+        expect(find.byType(LoginScreen), findsNothing);
+        expect(find.byType(OnboardingScreen), findsNothing);
+        expect(currentAccount.value?.email, 'back.sequencia@estudo.com');
+
+        // 3º voltar físico, já em Início: permanece no app.
+        final thirdBack = await pressPhysicalBack(tester);
+        tester.takeException();
+        expect(thirdBack, isNot(contains('SystemNavigator.pop')));
+        expect(mainShellTabIndex.value, 0);
+        expect(find.byType(MainShell), findsOneWidget);
+        expect(find.byType(LoginScreen), findsNothing);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets(
       'em Material de estudo (Estudos), o voltar FÍSICO vai para Início e '
       'NUNCA chama SystemNavigator.pop (que sairia do site)',
       (WidgetTester tester) async {
