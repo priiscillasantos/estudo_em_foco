@@ -1735,28 +1735,42 @@ void main() {
     );
 
     testWidgets(
-      'o app pede ao motor o modo de histórico de ENTRADA ÚNICA — é isso '
-      'que faz o voltar do navegador/Android chegar no app como popRoute '
-      'em vez de sair do site (o modo padrão "multi-entradas" pressupõe '
-      'um app usando a API Router, que este app não usa)',
+      'trocar de aba para Estudos/Quiz/Perfil cria profundidade de '
+      'histórico (dentro do gesto do toque), e voltar dali NÃO sai do '
+      'site — é o que faltava para o 2º voltar funcionar',
       (WidgetTester tester) async {
-        final navigationCalls = <String>[];
-        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          SystemChannels.navigation,
-          (call) async {
-            navigationCalls.add(call.method);
-            return null;
-          },
+        final account = await LocalStore.signUp(
+          name: 'Aluno Profundidade',
+          email: 'back.profundidade@estudo.com',
+          password: 'senha123',
         );
-        addTearDown(
-          () => tester.binding.defaultBinaryMessenger
-              .setMockMethodCallHandler(SystemChannels.navigation, null),
+        currentAccount.value = account;
+        currentProgress.value = await LocalStore.loadProgress(account.email);
+        mainShellTabIndex.value = 0;
+
+        await tester.pumpWidget(const EstudoEmFocoApp());
+        await tester.pumpAndSettle();
+        tester.takeException();
+
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NavigationBar),
+            matching: find.text('Estudos'),
+          ),
         );
+        await tester.pumpAndSettle();
+        tester.takeException();
+        expect(mainShellTabIndex.value, 1);
 
-        await selectSafeBrowserHistoryMode();
+        final platformCalls = await pressPhysicalBack(tester);
+        tester.takeException();
 
-        expect(navigationCalls, contains('selectSingleEntryHistory'));
-        expect(navigationCalls, isNot(contains('selectMultiEntryHistory')));
+        expect(platformCalls, isNot(contains('SystemNavigator.pop')));
+        expect(mainShellTabIndex.value, 0);
+        expect(find.byType(LoginScreen), findsNothing);
+        expect(find.byType(OnboardingScreen), findsNothing);
+
+        await tester.pumpWidget(const SizedBox.shrink());
       },
     );
   });

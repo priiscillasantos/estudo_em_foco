@@ -8,27 +8,26 @@ import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'app_buttons.dart';
+import 'browser_history.dart';
 import 'local_store.dart';
 import 'pdf_text_extractor_service.dart';
 import 'study_summary_generator.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Estratégia de URL "path" em vez do "#/" (hash) padrão do Flutter Web:
-  // o app nunca muda o path (não usa rotas nomeadas/Router), então isso
-  // não afeta nenhuma URL nem precisa de configuração especial no
-  // GitHub Pages — o motivo é puramente o botão voltar físico/do
-  // navegador em navegadores embutidos (ex.: o Chrome Custom Tab que o
-  // WhatsApp abre para links): alguns desses navegadores embutidos têm um
-  // histórico "só de hash" como não-navegável de verdade e fecham a aba
-  // direto para o app de origem em vez de mandar o voltar para a página;
-  // path real é tratado de forma mais confiável como histórico de
-  // navegação de verdade nesses casos.
-  usePathUrlStrategy();
-  await selectSafeBrowserHistoryMode();
-  // Antes de runApp de propósito: garante que este handler seja consultado
-  // no voltar ANTES do observador interno do WidgetsApp (ver
-  // [handleBrowserBack]).
+  // O APP assume o controle do histórico do navegador, em vez do motor do
+  // Flutter. Ver `browser_history_web.dart` para o motivo detalhado; em
+  // resumo: o mecanismo do motor recria a entrada protetora DURANTE o
+  // tratamento do voltar, e o Chrome no Android descarta entradas criadas
+  // sem gesto do usuário — daí o 1º voltar funcionar e o 2º sair do site.
+  // `setUrlStrategy(null)` desliga toda a integração do motor com o
+  // histórico (inclusive o `SystemNavigator.pop`, que era o que fechava a
+  // aba), e o app passa a criar as entradas nos toques do usuário.
+  setUrlStrategy(null);
+  initBrowserBackGuard(handleBrowserBack);
+  // Rede de segurança para o voltar de plataforma (Android nativo): fora
+  // da web o histórico do navegador não existe, e é este observador que
+  // aplica a mesma regra central (ver [handleBrowserBack]).
   installAppBackHandler();
   // Captura qualquer exceção do framework ou da plataforma (ex.: uma falha
   // assíncrona ao carregar o PDFium/WASM) que não seria pega por um
@@ -52,31 +51,6 @@ Future<void> main() async {
   await restoreActiveSession();
 
   runApp(const EstudoEmFocoApp());
-}
-
-/// Põe o motor do Flutter Web no modo de histórico de ENTRADA ÚNICA.
-///
-/// É o que faz o botão voltar FÍSICO do Android / do navegador não sair
-/// do site. Sem isso, num carregamento novo da página (abrir o link
-/// compartilhado no WhatsApp, digitar a URL, recarregar) o motor escolhe
-/// sozinho o modo "multi-entradas" — que pressupõe um app usando a API
-/// `Router`/rotas nomeadas para alimentar o histórico do navegador. Este
-/// app navega com `Navigator.push` direto (sem `Router`), então nesse
-/// modo o motor nunca cria uma entrada de histórico própria: o voltar do
-/// celular vai direto para a página anterior do navegador (a conversa do
-/// WhatsApp, a tela de guias) e o app nem recebe o evento — por isso
-/// interceptar só com `PopScope` não resolvia.
-///
-/// No modo de entrada única o motor mantém um par de entradas
-/// (origem + Flutter) e converte TODO voltar do navegador/Android numa
-/// mensagem `popRoute` para o app — que é exatamente o que os
-/// [PopScope] de [MainShell] e [MaterialReaderPage] já absorvem e
-/// traduzem em navegação interna segura.
-///
-/// Fora da web isso é ignorado pela plataforma. Exposto separadamente do
-/// `main()` para poder ser verificado nos testes.
-Future<void> selectSafeBrowserHistoryMode() {
-  return SystemNavigator.selectSingleEntryHistory();
 }
 
 /// Restaura a sessão ativa (ver `LocalStore.restoreSession`/
@@ -191,6 +165,21 @@ bool handleBrowserBack() {
   final fallbackTab = kMainShellBackFallbackTab[mainShellTabIndex.value];
   if (fallbackTab != null) mainShellTabIndex.value = fallbackTab;
   return true;
+}
+
+/// Cria uma entrada de histórico do navegador a cada tela empilhada
+/// (leitor de PDF, quiz de um material, feedback do quiz, login/cadastro).
+///
+/// Como o `Navigator.push` acontece dentro do toque do usuário, a entrada
+/// nasce com "gesto" — que é a condição para o Chrome do Android respeitá-la
+/// no voltar (ver `browser_history_web.dart`). É assim que o app garante
+/// que exista o que o próximo voltar consumir, sem recriar entradas
+/// durante o próprio voltar.
+class _HistoryDepthObserver extends NavigatorObserver {
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    pushSafeHistoryEntry();
+  }
 }
 
 /// Liga [handleBrowserBack] no voltar do sistema/navegador.
@@ -423,7 +412,10 @@ class EstudoEmFocoApp extends StatelessWidget {
           bodyMedium: TextStyle(color: AppColors.primary, fontSize: 14),
         ),
       ),
-      navigatorObservers: [_MobileFrameRouteObserver()],
+      navigatorObservers: [
+        _MobileFrameRouteObserver(),
+        _HistoryDepthObserver(),
+      ],
       // Centraliza todas as telas numa largura de celular no Chrome
       // desktop, exceto a Leitura do material (ver
       // [isFullBleedRouteActive]/[_MobileWidthFrame]), que precisa da
@@ -1143,7 +1135,15 @@ class _MainShellState extends State<MainShell> {
     if (mounted) setState(() => _selectedIndex = mainShellTabIndex.value);
   }
 
+  /// Toque numa aba da barra inferior. Além de trocar a aba, cria uma
+  /// entrada no histórico do navegador — dentro do gesto do usuário, que é
+  /// a condição para o Chrome do Android respeitá-la no voltar (ver
+  /// `browser_history_web.dart`). É o que faz o voltar sair de
+  /// Estudos/Quiz/Perfil para a tela anterior segura em vez de sair do
+  /// site. Só nas abas "para dentro": em Início não há para onde voltar,
+  /// então não faz sentido acumular profundidade ali.
   void _selectTab(int index) {
+    if (index != 0) pushSafeHistoryEntry();
     mainShellTabIndex.value = index;
     setState(() => _selectedIndex = index);
   }
