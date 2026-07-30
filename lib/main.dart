@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'app_buttons.dart';
@@ -12,6 +13,17 @@ import 'study_summary_generator.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Estratégia de URL "path" em vez do "#/" (hash) padrão do Flutter Web:
+  // o app nunca muda o path (não usa rotas nomeadas/Router), então isso
+  // não afeta nenhuma URL nem precisa de configuração especial no
+  // GitHub Pages — o motivo é puramente o botão voltar físico/do
+  // navegador em navegadores embutidos (ex.: o Chrome Custom Tab que o
+  // WhatsApp abre para links): alguns desses navegadores embutidos têm um
+  // histórico "só de hash" como não-navegável de verdade e fecham a aba
+  // direto para o app de origem em vez de mandar o voltar para a página;
+  // path real é tratado de forma mais confiável como histórico de
+  // navegação de verdade nesses casos.
+  usePathUrlStrategy();
   // Captura qualquer exceção do framework ou da plataforma (ex.: uma falha
   // assíncrona ao carregar o PDFium/WASM) que não seria pega por um
   // try/catch comum dentro de um único widget, registrando-a no console em

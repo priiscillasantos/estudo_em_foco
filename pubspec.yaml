@@ -50,6 +50,8 @@ dependencies:
   # rendering, zoom, page navigation, thumbnails and text search.
   pdfrx: ^2.4.7
   web: ^1.1.1
+  flutter_web_plugins:
+    sdk: flutter
 
 dev_dependencies:
   flutter_test:
