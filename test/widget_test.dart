@@ -1775,6 +1775,137 @@ void main() {
     );
   });
 
+  group('Feedback do quiz com ZERO acertos', () {
+    const subtituloZero =
+        'Você ainda está se familiarizando com o conteúdo. Revise o '
+        'material e tente novamente — a prática vai te ajudar a evoluir.';
+    const textoProximoPasso =
+        'Releia o material com atenção e tente novamente. Pequenas '
+        'revisões ajudam a fixar melhor o conteúdo.';
+
+    testWidgets(
+      'errando tudo: título acolhedor, subtítulo orientando revisão, sem '
+      'card "Pontos fortes", com card "Próximo passo" e mantendo "O que '
+      'revisar" com os tópicos errados',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(800, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: PerformanceScreen(
+              acertos: 0,
+              erros: 3,
+              feedback: 'Releia o material e tente novamente.',
+              reviewTopics: ['Sensores', 'Atuadores'],
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Continue praticando!'), findsOneWidget);
+        expect(find.text(subtituloZero), findsOneWidget);
+
+        // "Pontos fortes" não faz sentido com 0 acertos.
+        expect(find.text('Pontos fortes'), findsNothing);
+        expect(
+          find.text('Responda o quiz para ver seus pontos fortes'),
+          findsNothing,
+        );
+
+        // No lugar dele, a orientação de próximo passo.
+        expect(find.text('Próximo passo'), findsOneWidget);
+        expect(find.text(textoProximoPasso), findsOneWidget);
+
+        // "O que revisar" continua normal, com os tópicos das erradas.
+        expect(find.text('O que revisar'), findsOneWidget);
+        expect(find.text('Sensores'), findsOneWidget);
+        expect(find.text('Atuadores'), findsOneWidget);
+
+        // O card da nota não pode dizer "está no caminho certo" logo ao
+        // lado de "0 de 3 acertos".
+        expect(find.text('Você está no caminho certo!'), findsNothing);
+        expect(
+          find.text('É só o começo — revise e tente de novo.'),
+          findsOneWidget,
+        );
+
+        // Sem overflow em tela estreita de celular.
+        tester.view.physicalSize = const Size(360, 2400);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets(
+      'com pelo menos 1 acerto o feedback normal continua igual: '
+      '"Pontos fortes" aparece e "Próximo passo" não',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(800, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: PerformanceScreen(
+              acertos: 1,
+              erros: 2,
+              feedback: 'Releia o material e tente novamente.',
+              strengths: ['Transdutores'],
+              reviewTopics: ['Sensores'],
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Pontos fortes'), findsOneWidget);
+        expect(find.text('Transdutores'), findsOneWidget);
+        expect(find.text('Próximo passo'), findsNothing);
+        expect(find.text(subtituloZero), findsNothing);
+        expect(find.text('Você está no caminho certo!'), findsOneWidget);
+        // Mantém a mensagem que veio do quiz.
+        expect(
+          find.text('Releia o material e tente novamente.'),
+          findsOneWidget,
+        );
+        expect(find.text('O que revisar'), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets(
+      'acerto alto continua com "Muito bem!" — o texto de zero acertos não '
+      'invade os outros casos',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(800, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: PerformanceScreen(
+              acertos: 3,
+              erros: 0,
+              feedback: 'Excelente!',
+              strengths: ['Sensores'],
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Muito bem!'), findsOneWidget);
+        expect(find.text('Pontos fortes'), findsOneWidget);
+        expect(find.text('Próximo passo'), findsNothing);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  });
+
   group('zoom button enablement (Leitura do material)', () {
     test('"-" disabled while the viewer is not ready yet', () {
       expect(

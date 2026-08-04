@@ -5729,6 +5729,11 @@ class PerformanceScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final total = acertos + erros;
     final percent = total == 0 ? 0 : (acertos / total) * 100;
+    // Errou tudo: falar de "pontos fortes" não faz sentido e a mensagem
+    // curta soa seca. A tela troca o subtítulo e substitui aquele card por
+    // uma orientação de próximo passo — o resto (nota, "O que revisar",
+    // botões) continua igual.
+    final semAcertos = acertos == 0 && total > 0;
     final strengthTags = strengths.isNotEmpty
         ? strengths
         : ['Responda o quiz para ver seus pontos fortes'];
@@ -5757,7 +5762,7 @@ class PerformanceScreen extends StatelessWidget {
           const _HeroTrophyBanner(),
           const SizedBox(height: 18),
           Text(
-            percent >= 70 ? 'Muito bem!' : 'Continue praticando!',
+            (!semAcertos && percent >= 70) ? 'Muito bem!' : 'Continue praticando!',
             textAlign: TextAlign.center,
             style: const TextStyle(
               fontSize: 30,
@@ -5767,7 +5772,11 @@ class PerformanceScreen extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            feedback,
+            semAcertos
+                ? 'Você ainda está se familiarizando com o conteúdo. Revise '
+                      'o material e tente novamente — a prática vai te ajudar '
+                      'a evoluir.'
+                : feedback,
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 16, color: AppColors.mutedText),
           ),
@@ -5794,9 +5803,15 @@ class PerformanceScreen extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 5),
-                          const Text(
-                            'Você está no caminho certo!',
-                            style: TextStyle(color: AppColors.mutedText),
+                          Text(
+                            // Com 0 acertos, "Você está no caminho certo!"
+                            // logo ao lado de "0 de N acertos" soa
+                            // contraditório — troca por algo que encoraje
+                            // sem desmentir o resultado.
+                            semAcertos
+                                ? 'É só o começo — revise e tente de novo.'
+                                : 'Você está no caminho certo!',
+                            style: const TextStyle(color: AppColors.mutedText),
                           ),
                           const SizedBox(height: 12),
                           ClipRRect(
@@ -5841,13 +5856,23 @@ class PerformanceScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          _FeedbackPanel(
-            icon: LucideIcons.star,
-            color: const Color(0xFF3DBB78),
-            title: 'Pontos fortes',
-            text: 'Você mandou bem nestes tópicos!',
-            tags: strengthTags,
-          ),
+          if (semAcertos)
+            _FeedbackPanel(
+              icon: LucideIcons.target,
+              color: AppColors.secondary,
+              title: 'Próximo passo',
+              text: 'Releia o material com atenção e tente novamente. '
+                  'Pequenas revisões ajudam a fixar melhor o conteúdo.',
+              tags: const [],
+            )
+          else
+            _FeedbackPanel(
+              icon: LucideIcons.star,
+              color: const Color(0xFF3DBB78),
+              title: 'Pontos fortes',
+              text: 'Você mandou bem nestes tópicos!',
+              tags: strengthTags,
+            ),
           const SizedBox(height: 12),
           _FeedbackPanel(
             icon: LucideIcons.bookOpen,
@@ -5965,7 +5990,10 @@ class _FeedbackPanel extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(text, style: const TextStyle(color: AppColors.mutedText)),
-                const SizedBox(height: 10),
+                // Sem tags (ex.: card "Próximo passo" quando o usuário
+                // errou tudo) não reserva o espaço delas, senão sobra um
+                // vão embaixo do texto.
+                if (tags.isNotEmpty) const SizedBox(height: 10),
                 Wrap(
                   spacing: 7,
                   runSpacing: 7,
