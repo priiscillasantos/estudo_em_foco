@@ -1775,6 +1775,168 @@ void main() {
     );
   });
 
+  group('aba Quiz reconhece o PDF carregado depois (sincronização)', () {
+    const baseText =
+        'Esta aula aborda os sistemas de medição, os transdutores, '
+        'sensores e atuadores. Os sensores convertem grandezas físicas, '
+        'como temperatura, pressão e movimento, em sinais elétricos.';
+
+    StudyMaterial material(String id) => StudyMaterial(
+      id: id,
+      fileName: 'aula-transdutores.pdf',
+      userSummary: baseText,
+      extractedText: baseText,
+      extractionStatus: PdfExtractionStatus.success,
+      generatedSummary: baseText,
+      summaryStatus: SummaryStatus.success,
+    );
+
+    /// Entra no app já logado, como acontece de verdade: o MainShell (e
+    /// com ele a aba Quiz) é construído ANTES de existir qualquer PDF.
+    Future<UserAccount> entrarNoApp(WidgetTester tester, String email) async {
+      final account = await LocalStore.signUp(
+        name: 'Aluno Sync',
+        email: email,
+        password: 'senha123',
+      );
+      currentAccount.value = account;
+      currentProgress.value = await LocalStore.loadProgress(account.email);
+      mainShellTabIndex.value = 0;
+      await tester.pumpWidget(const MaterialApp(home: MainShell()));
+      await tester.pumpAndSettle();
+      return account;
+    }
+
+    Future<void> abrirAbaQuiz(WidgetTester tester) async {
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text('Quiz'),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('TESTE 1 — sem PDF carregado, mostra o estado vazio', (
+      WidgetTester tester,
+    ) async {
+      await entrarNoApp(tester, 'sync1@estudo.com');
+      await abrirAbaQuiz(tester);
+
+      expect(find.text('Primeiro carregue um PDF'), findsOneWidget);
+      expect(find.text('Pergunta 1 de 3'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets(
+      'TESTE 2 — PDF carregado DEPOIS que a aba Quiz já existe: ao abrir a '
+      'aba, o material é reconhecido (era exatamente o bug)',
+      (WidgetTester tester) async {
+        final account = await entrarNoApp(tester, 'sync2@estudo.com');
+
+        // Simula o upload feito na aba Estudos, que persiste o material.
+        await LocalStore.saveMaterials(account.email, [material('m-1')]);
+
+        await abrirAbaQuiz(tester);
+
+        expect(find.text('Primeiro carregue um PDF'), findsNothing);
+        expect(find.text('Pergunta 1 de 3'), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets(
+      'TESTE 3 — sair da aba Quiz e voltar mantém o material reconhecido',
+      (WidgetTester tester) async {
+        final account = await entrarNoApp(tester, 'sync3@estudo.com');
+        await LocalStore.saveMaterials(account.email, [material('m-1')]);
+
+        await abrirAbaQuiz(tester);
+        expect(find.text('Pergunta 1 de 3'), findsOneWidget);
+
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NavigationBar),
+            matching: find.text('Início'),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await abrirAbaQuiz(tester);
+
+        expect(find.text('Primeiro carregue um PDF'), findsNothing);
+        expect(find.text('Pergunta 1 de 3'), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets(
+      'TESTE 4 — excluindo o PDF, a aba Quiz volta ao estado vazio',
+      (WidgetTester tester) async {
+        final account = await entrarNoApp(tester, 'sync4@estudo.com');
+        await LocalStore.saveMaterials(account.email, [material('m-1')]);
+
+        await abrirAbaQuiz(tester);
+        expect(find.text('Pergunta 1 de 3'), findsOneWidget);
+
+        // Volta para outra aba e remove o material (como o botão de
+        // excluir do card faz: atualiza e persiste a lista).
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NavigationBar),
+            matching: find.text('Início'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await LocalStore.saveMaterials(account.email, const []);
+
+        await abrirAbaQuiz(tester);
+
+        expect(find.text('Primeiro carregue um PDF'), findsOneWidget);
+        expect(find.text('Pergunta 1 de 3'), findsNothing);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets(
+      'quiz aberto pelo card de um material NÃO troca de material sozinho '
+      'quando a aba do shell muda',
+      (WidgetTester tester) async {
+        final account = await entrarNoApp(tester, 'sync5@estudo.com');
+        await LocalStore.saveMaterials(account.email, [material('m-outro')]);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: QuizScreen(
+              material: StudyMaterial(
+                id: 'm-fixo',
+                fileName: 'aula-fixa.pdf',
+                userSummary: baseText,
+                extractedText: baseText,
+                extractionStatus: PdfExtractionStatus.success,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Pergunta 1 de 3'), findsOneWidget);
+
+        // Mexer no índice de aba do shell não pode afetar esta instância.
+        mainShellTabIndex.value = kQuizShellTabIndex;
+        await tester.pumpAndSettle();
+
+        expect(find.text('Pergunta 1 de 3'), findsOneWidget);
+        expect(find.text('Primeiro carregue um PDF'), findsNothing);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  });
+
   group('Feedback do quiz com ZERO acertos', () {
     const subtituloZero =
         'Você ainda está se familiarizando com o conteúdo. Revise o '

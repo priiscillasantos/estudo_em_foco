@@ -123,6 +123,11 @@ void goToMainShellHome(BuildContext context) {
 /// shell por baixo corretamente.
 const Map<int, int> kMainShellBackFallbackTab = {1: 0, 2: 1, 3: 0};
 
+/// Índice da aba "Quiz" no [IndexedStack] de [MainShell] (Início, Estudos,
+/// Quiz, Perfil) — usado por [_QuizScreenState] para saber quando a aba
+/// voltou a ficar visível e re-sincronizar o material carregado.
+const int kQuizShellTabIndex = 2;
+
 /// Navigator raiz do app, usado por [handleBrowserBack] para fechar a tela
 /// empilhada atual (leitor de PDF, quiz de um material, feedback) sem
 /// depender de um `BuildContext` de tela.
@@ -5023,7 +5028,58 @@ class _QuizScreenState extends State<QuizScreen> {
   @override
   void initState() {
     super.initState();
+    // Só a instância que vive na aba do shell precisa se re-sincronizar: a
+    // aberta pelo card de um material já recebe o material pronto por
+    // [QuizScreen.material] e não deve trocar de material sozinha.
+    if (widget.material == null) {
+      mainShellTabIndex.addListener(_onShellTabChanged);
+    }
     _prepare();
+  }
+
+  @override
+  void dispose() {
+    if (widget.material == null) {
+      mainShellTabIndex.removeListener(_onShellTabChanged);
+    }
+    super.dispose();
+  }
+
+  void _onShellTabChanged() {
+    if (mainShellTabIndex.value != kQuizShellTabIndex) return;
+    unawaited(_resyncMaterialFromStorage());
+  }
+
+  /// Re-sincroniza a aba Quiz com o material que existe DE FATO.
+  ///
+  /// A aba Quiz mora dentro do [IndexedStack] de [MainShell], então é
+  /// construída uma única vez, logo depois do login — quando o usuário
+  /// ainda não carregou PDF nenhum. Sem isto ela ficava presa no estado
+  /// "Primeiro carregue um PDF" para sempre, mesmo depois de o PDF ser
+  /// carregado e processado em "Estudos" (que resolve o material a cada
+  /// abertura e por isso não tinha o problema).
+  ///
+  /// Consulta a MESMA fonte de verdade que a tela de Estudos usa — o
+  /// armazenamento local, que Estudos mantém atualizado a cada
+  /// upload/remoção (ver `_MaterialStudyPageState._persist`) — sem criar
+  /// cópia do PDF nem estado paralelo. Só refaz o quiz quando o material
+  /// mais recente realmente mudou, para não reiniciar à toa um quiz que o
+  /// usuário já começou.
+  Future<void> _resyncMaterialFromStorage() async {
+    final email = currentAccount.value?.email;
+    final materials = email == null
+        ? const <StudyMaterial>[]
+        : await LocalStore.loadMaterials(email);
+    final latest = materials.isNotEmpty ? materials.last : null;
+    if (!mounted || latest?.id == _resolvedMaterial?.id) return;
+    setState(() {
+      _index = 0;
+      _score = 0;
+      _selected = null;
+      _correctTerms.clear();
+      _reviewTerms.clear();
+    });
+    await _prepare();
   }
 
   /// Resolve QUAL material usar (o recebido, ou o mais recente do usuário
